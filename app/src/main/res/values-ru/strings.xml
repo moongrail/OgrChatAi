@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">MindForge</string>
+
+    <!-- Navigation -->
+    <string name="nav_chats">Чаты</string>
+    <string name="nav_models">Модели</string>
+    <string name="nav_settings">Настройки</string>
+
+    <!-- Chat Screen -->
+    <string name="chat_new">Новый чат</string>
+    <string name="chat_search">Поиск чатов…</string>
+    <string name="chat_empty_title">Чатов пока нет</string>
+    <string name="chat_empty_subtitle">Нажмите + чтобы начать новый разговор</string>
+    <string name="chat_delete_title">Удалить чат</string>
+    <string name="chat_delete_message">Вы уверены, что хотите удалить этот чат? Это действие нельзя отменить.</string>
+    <string name="chat_delete">Удалить</string>
+    <string name="chat_cancel">Отмена</string>
+
+    <!-- Chat Detail -->
+    <string name="chat_detail_title">Чат</string>
+    <string name="chat_input_hint">Введите сообщение…</string>
+    <string name="chat_send">Отправить</string>
+    <string name="chat_stop">Стоп</string>
+    <string name="chat_attach">Прикрепить файл</string>
+    <string name="chat_generating">Генерация…</string>
+    <string name="chat_empty_conversation">Начните диалог</string>
+    <string name="chat_empty_conversation_subtitle">Отправьте сообщение, чтобы начать разговор с ИИ</string>
+    <string name="chat_copied">Скопировано в буфер обмена</string>
+
+    <!-- Model Browser -->
+    <string name="model_browser_title">Браузер моделей</string>
+    <string name="model_search">Поиск моделей…</string>
+    <string name="model_filters">Фильтры</string>
+    <string name="model_downloads">Загрузки</string>
+    <string name="model_likes">Нравится</string>
+    <string name="model_size">Размер</string>
+    <string name="model_download">Скачать</string>
+    <string name="model_downloading">Загрузка…</string>
+    <string name="model_downloaded">Загружено</string>
+    <string name="model_delete">Удалить</string>
+    <string name="model_empty">Модели не найдены</string>
+    <string name="model_error">Ошибка загрузки моделей</string>
+
+    <!-- Settings -->
+    <string name="settings_title">Настройки</string>
+    <string name="settings_language">Язык</string>
+    <string name="settings_language_en">Английский</string>
+    <string name="settings_language_ru">Русский</string>
+    <string name="settings_theme">Тема</string>
+    <string name="settings_theme_dark">Тёмная</string>
+    <string name="settings_theme_light">Светлая</string>
+    <string name="settings_theme_system">Системная</string>
+    <string name="settings_generation">Параметры генерации</string>
+    <string name="settings_temperature">Температура</string>
+    <string name="settings_top_p">Top P</string>
+    <string name="settings_max_tokens">Макс. токенов</string>
+    <string name="settings_storage">Хранилище</string>
+    <string name="settings_downloaded_models">Загруженные модели</string>
+    <string name="settings_clear_data">Очистить все данные</string>
+    <string name="settings_clear_data_message">Это удалит всю историю чатов и загруженные модели. Это действие нельзя отменить.</string>
+    <string name="settings_about">О приложении</string>
+    <string name="settings_version">Версия %1$s</string>
+
+    <!-- Common -->
+    <string name="error_network">Ошибка сети. Проверьте подключение.</string>
+    <string name="error_unknown">Произошла непредвиденная ошибка.</string>
+    <string name="retry">Повторить</string>
+    <string name="ok">OK</string>
+    <string name="yes">Да</string>
+    <string name="no">Нет</string>
+</resources>
