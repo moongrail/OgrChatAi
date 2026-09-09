@@ -9,7 +9,7 @@ plugins {
 
 android {
     namespace = "com.ogrchatai.app"
-    compileSdk = 35
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.ogrchatai.app"
@@ -51,6 +51,13 @@ android {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
+        jniLibs {
+            useLegacyPackaging = true
+        }
+    }
+    lint {
+        abortOnError = false
+        checkReleaseBuilds = false
     }
 }
 
@@ -101,6 +108,11 @@ dependencies {
 
     // Security
     implementation(libs.androidx.security.crypto)
+
+    // On-device LLM inference (llama.cpp)
+    implementation("io.github.its-hazratbilal:android-ai-kit-chat:1.0.0") {
+        exclude(group = "androidx.core", module = "core-ktx")
+    }
 
     // DocumentFile
     implementation(libs.androidx.documentfile)

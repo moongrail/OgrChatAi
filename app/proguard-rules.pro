@@ -1,4 +1,4 @@
-# =========================
+﻿# =========================
 # General Android rules
 # =========================
 -keepattributes *Annotation*
@@ -146,4 +146,4 @@
 # =========================
 # Keep Application class
 # =========================
--keep class com.mindforge.app.** { *; }
+-keep class com.ogrchatai.app.** { *; }
