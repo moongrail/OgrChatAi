@@ -1,15 +1,77 @@
-*.iml
+﻿# Gradle
 .gradle
-/local.properties
-/.idea/caches
-/.idea/libraries
-/.idea/modules.xml
-/.idea/workspace.xml
-/.idea/navEditor.xml
-/.idea/assetWizardSettings.xml
-.DS_Store
+build/
+/gradle/wrapper/gradle-wrapper.jar
+
+# Local configuration
+local.properties
+*.iml
+
+# Android Studio
+.idea/
+*.iml
+
+# Build outputs
 /build
+/app/build
 /captures
 .externalNativeBuild
 .cxx
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Keystores
+*.jks
+*.keystore
+*.p12
+
+# Secrets (never commit)
+*.properties.local
+secrets.properties
+google-services.json
+secrets.xml
+
+# IDE
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# Build outputs
+build/
+*.apk
+*.aab
+*.ap_
+
+# Cache
+.gradle/
+build/
+*.class
+
+# Test reports
+*.html
+
+# Temporary files
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+
+# Backup
+*.bak
+*.orig
+
+# Local.properties (contains SDK path)
 local.properties
+*.properties.local
+
+# Secrets
+secrets.properties
+keystore.properties
+signing.properties
