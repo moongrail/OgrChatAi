@@ -29,6 +29,12 @@ data class ChatMessageEntity(
 
     val content: String,
 
+    @ColumnInfo(name = "encrypted_content")
+    val encryptedContent: String? = null,
+
+    @ColumnInfo(name = "content_nonce")
+    val contentNonce: String? = null,
+
     val timestamp: Long = System.currentTimeMillis(),
 
     val attachments: String = "[]"

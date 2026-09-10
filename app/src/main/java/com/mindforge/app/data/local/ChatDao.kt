@@ -60,6 +60,9 @@ interface ChatDao {
     @Query("UPDATE chats SET updated_at = :timestamp WHERE id = :chatId")
     suspend fun updateChatTimestamp(chatId: Long, timestamp: Long = System.currentTimeMillis())
 
+    @Query("UPDATE chats SET title = :title, updated_at = :timestamp WHERE id = :chatId")
+    suspend fun updateChatTitle(chatId: Long, title: String, timestamp: Long = System.currentTimeMillis())
+
     @Query("SELECT * FROM chat_messages WHERE chat_id = :chatId ORDER BY timestamp DESC LIMIT 1")
     fun getLastMessage(chatId: Long): Flow<ChatMessageEntity?>
 

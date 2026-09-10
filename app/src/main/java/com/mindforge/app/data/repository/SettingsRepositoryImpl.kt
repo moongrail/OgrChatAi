@@ -4,6 +4,7 @@ import com.mindforge.app.data.preferences.UserPreferences
 import com.mindforge.app.domain.repository.SettingsRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 import javax.inject.Singleton
 

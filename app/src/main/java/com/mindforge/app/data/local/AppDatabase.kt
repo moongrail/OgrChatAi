@@ -7,20 +7,23 @@ import androidx.room.RoomDatabase
 import com.mindforge.app.data.local.entity.ChatEntity
 import com.mindforge.app.data.local.entity.ChatMessageEntity
 import com.mindforge.app.data.local.entity.DownloadedModelEntity
+import com.mindforge.app.data.local.entity.FolderEntity
 
 @Database(
     entities = [
         ChatEntity::class,
         ChatMessageEntity::class,
-        DownloadedModelEntity::class
+        DownloadedModelEntity::class,
+        FolderEntity::class
     ],
-    version = 1,
+    version = 2,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
 
     abstract fun chatDao(): ChatDao
     abstract fun modelDao(): ModelDao
+    abstract fun folderDao(): FolderDao
 
     companion object {
         const val DATABASE_NAME = "chatllm_database"

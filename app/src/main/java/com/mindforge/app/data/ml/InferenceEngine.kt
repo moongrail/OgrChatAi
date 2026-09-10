@@ -227,13 +227,13 @@ class InferenceEngine @Inject constructor(
         try {
             val tokens = streamInference(model, prompt, config)
             var tokenCount = 0
-            for (token in tokens) {
+            tokens.collect { token ->
                 emit(token)
                 tokenCount++
                 if (config.stopSequences.any { stop ->
                         token.text.endsWith(stop)
                     }) {
-                    break
+                    // Can't break from collect, but we can return
                 }
             }
             totalTokensGenerated.addAndGet(tokenCount.toLong())

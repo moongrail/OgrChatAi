@@ -120,33 +120,21 @@ class ChatsViewModel @Inject constructor(
     private fun createChat() {
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true) }
-            createChatUseCase()
-                .onSuccess { chatId ->
-                    _events.update { currentEvents ->
-                        currentEvents + ChatsEvent.ChatCreated(chatId)
-                    }
-                }
-                .onFailure { throwable ->
-                    _uiState.update {
-                        it.copy(
-                            isLoading = false,
-                            error = throwable.message ?: "Failed to create chat"
-                        )
-                    }
-                }
+            // Use a default model ID - in real app this would come from settings or user selection
+            val defaultModelId = "mistralai/Mistral-7B-Instruct-v0.1"
+            val chatId = createChatUseCase("New Chat", defaultModelId)
+            _events.update { currentEvents ->
+                currentEvents + ChatsEvent.ChatCreated(chatId.toString())
+            }
+            _uiState.update { it.copy(isLoading = false) }
         }
     }
 
     private fun deleteChat(chatId: String) {
         viewModelScope.launch {
-            deleteChatUseCase(chatId)
-                .onFailure { throwable ->
-                    _uiState.update {
-                        it.copy(
-                            error = throwable.message ?: "Failed to delete chat"
-                        )
-                    }
-                }
+            val id = chatId.toLongOrNull() ?: return@launch
+            deleteChatUseCase(id)
+            _uiState.update { it.copy(isLoading = false) }
         }
     }
 

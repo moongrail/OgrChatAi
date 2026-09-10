@@ -104,7 +104,7 @@ fun SettingsScreen(
     }
 
     Scaffold(
-        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
+        modifier = Modifier,
         topBar = {
             LargeTopAppBar(
                 title = {
@@ -375,7 +375,7 @@ fun SettingsScreen(
                         icon = Icons.Filled.SdStorage,
                         title = "Downloaded Models",
                         subtitle = "Manage your downloaded models",
-                        onClick = { }
+                        onClick = { /* TODO: Navigate to downloaded models screen */ }
                     )
                 }
 

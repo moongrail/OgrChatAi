@@ -7,9 +7,13 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.core.doublePreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.google.gson.Gson
+import com.mindforge.app.domain.model.ModelSettings
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -24,6 +28,7 @@ class UserPreferences @Inject constructor(
 ) {
 
     private val dataStore = context.dataStore
+    private val gson = Gson()
 
     val themeMode: Flow<ThemeMode> = dataStore.data.map { preferences ->
         when (preferences[THEME_MODE_KEY]) {
@@ -50,7 +55,7 @@ class UserPreferences @Inject constructor(
     }
 
     val temperature: Flow<Float> = dataStore.data.map { preferences ->
-        preferences[TEMPERATURE_KEY] ?: 0.7f
+        (preferences[TEMPERATURE_KEY] ?: 0.7).toFloat()
     }
 
     val maxTokens: Flow<Int> = dataStore.data.map { preferences ->
@@ -58,11 +63,43 @@ class UserPreferences @Inject constructor(
     }
 
     val topP: Flow<Float> = dataStore.data.map { preferences ->
-        preferences[TOP_P_KEY] ?: 0.9f
+        (preferences[TOP_P_KEY] ?: 0.9).toFloat()
     }
 
     val streamingEnabled: Flow<Boolean> = dataStore.data.map { preferences ->
         preferences[STREAMING_ENABLED_KEY] ?: true
+    }
+
+    fun getModelSettings(modelId: String): Flow<ModelSettings> {
+        val key = stringPreferencesKey("model_settings_$modelId")
+        return dataStore.data.map { preferences ->
+            val json = preferences[key] ?: return@map ModelSettings.default(modelId)
+            try {
+                gson.fromJson(json, ModelSettings::class.java)
+            } catch (e: Exception) {
+                ModelSettings.default(modelId)
+            }
+        }
+    }
+
+    suspend fun getModelSettingsOnce(modelId: String): ModelSettings {
+        val key = stringPreferencesKey("model_settings_$modelId")
+        return dataStore.data.first().let { preferences ->
+            val json = preferences[key] ?: return@let ModelSettings.default(modelId)
+            try {
+                gson.fromJson(json, ModelSettings::class.java)
+            } catch (e: Exception) {
+                ModelSettings.default(modelId)
+            }
+        }
+    }
+
+    suspend fun saveModelSettings(settings: ModelSettings) {
+        val key = stringPreferencesKey("model_settings_${settings.modelId}")
+        val json = gson.toJson(settings)
+        dataStore.edit { preferences ->
+            preferences[key] = json
+        }
     }
 
     suspend fun setThemeMode(themeMode: ThemeMode) {
@@ -97,7 +134,7 @@ class UserPreferences @Inject constructor(
 
     suspend fun setTemperature(temperature: Float) {
         dataStore.edit { preferences ->
-            preferences[TEMPERATURE_KEY] = temperature
+            preferences[TEMPERATURE_KEY] = temperature.toDouble()
         }
     }
 
@@ -109,7 +146,7 @@ class UserPreferences @Inject constructor(
 
     suspend fun setTopP(topP: Float) {
         dataStore.edit { preferences ->
-            preferences[TOP_P_KEY] = topP
+            preferences[TOP_P_KEY] = topP.toDouble()
         }
     }
 
@@ -129,9 +166,9 @@ class UserPreferences @Inject constructor(
         private val FONT_SIZE_KEY = intPreferencesKey("font_size")
         private val SHOW_TOKEN_COUNT_KEY = booleanPreferencesKey("show_token_count")
         private val DEFAULT_MODEL_ID_KEY = stringPreferencesKey("default_model_id")
-        private val TEMPERATURE_KEY = intPreferencesKey("temperature_raw")
+        private val TEMPERATURE_KEY = doublePreferencesKey("temperature_raw")
         private val MAX_TOKENS_KEY = intPreferencesKey("max_tokens")
-        private val TOP_P_KEY = intPreferencesKey("top_p_raw")
+        private val TOP_P_KEY = doublePreferencesKey("top_p_raw")
         private val STREAMING_ENABLED_KEY = booleanPreferencesKey("streaming_enabled")
     }
 }

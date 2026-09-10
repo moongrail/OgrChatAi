@@ -88,18 +88,18 @@ object ModelUtils {
         availableRamBytes: Long,
         quantization: String?
     ): ModelCompatibility {
-        val estimatedRamNeeded = when (quantization?.lowercase()) {
-            "fp32" -> modelSizeBytes * 4
-            "fp16" -> modelSizeBytes * 2
+        val estimatedRamNeeded: Double = when (quantization?.lowercase()) {
+            "fp32" -> modelSizeBytes * 4.0
+            "fp16" -> modelSizeBytes * 2.0
             "int8" -> modelSizeBytes * 1.5
             "int4", "q4_0", "q4_1", "q4_k_m" -> modelSizeBytes * 1.2
-            else -> modelSizeBytes * 2
+            else -> modelSizeBytes * 2.0
         }
 
         return when {
-            availableRamBytes > estimatedRamNeeded * 2 -> ModelCompatibility.FULL
-            availableRamBytes > estimatedRamNeeded -> ModelCompatibility.LIMITED
-            availableRamBytes > estimatedRamNeeded * 0.7 -> ModelCompatibility.MARGINAL
+            availableRamBytes > (estimatedRamNeeded * 2).toLong() -> ModelCompatibility.FULL
+            availableRamBytes > estimatedRamNeeded.toLong() -> ModelCompatibility.LIMITED
+            availableRamBytes > (estimatedRamNeeded * 0.7).toLong() -> ModelCompatibility.MARGINAL
             else -> ModelCompatibility.INCOMPATIBLE
         }
     }

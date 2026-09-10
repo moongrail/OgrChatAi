@@ -9,6 +9,7 @@ import com.mindforge.app.data.remote.HuggingFaceApiClient
 import com.mindforge.app.domain.model.DownloadedModel
 import com.mindforge.app.domain.model.GenerationConfig
 import com.mindforge.app.domain.model.HuggingFaceModel
+import com.mindforge.app.domain.model.ModelSettings
 import com.mindforge.app.domain.model.Sibling
 import com.mindforge.app.domain.repository.ModelRepository
 import dagger.Lazy
@@ -57,15 +58,15 @@ class ModelRepositoryImpl @Inject constructor(
                         modelId = dto.modelId ?: dto.id ?: "",
                         name = dto.modelId?.substringAfter('/') ?: dto.id?.substringAfter('/') ?: "",
                         author = dto.modelId?.substringBefore('/') ?: dto.id?.substringBefore('/') ?: "",
-                        downloads = dto.downloads ?: 0,
-                        likes = dto.likes ?: 0,
+                        downloads = dto.downloads.toLong(),
+                        likes = dto.likes,
                         tags = dto.tags ?: emptyList(),
                         pipelineTag = dto.pipelineTag,
                         lastModified = dto.lastModified,
                         siblings = dto.siblings?.map { sib ->
                             Sibling(
                                 filename = sib.filename ?: "",
-                                rfilename = sib.rfilename ?: sib.filename ?: "",
+                                rfilename = sib.filename ?: "",
                                 size = sib.size
                             )
                         } ?: emptyList()
@@ -183,6 +184,18 @@ class ModelRepositoryImpl @Inject constructor(
 
     override suspend fun isModelDownloaded(id: String): Boolean {
         return modelDao.getModelByHfIdOnce(id) != null
+    }
+
+    override fun getModelSettings(modelId: String): Flow<ModelSettings> {
+        return userPreferences.getModelSettings(modelId)
+    }
+
+    override suspend fun getModelSettingsOnce(modelId: String): ModelSettings {
+        return userPreferences.getModelSettingsOnce(modelId)
+    }
+
+    override suspend fun saveModelSettings(settings: ModelSettings) {
+        userPreferences.saveModelSettings(settings)
     }
 
     private fun DownloadedModelEntity.toDomain(): DownloadedModel {

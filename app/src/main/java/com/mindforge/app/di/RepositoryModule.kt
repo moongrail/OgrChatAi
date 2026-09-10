@@ -1,11 +1,11 @@
 package com.mindforge.app.di
 
-import com.mindforge.app.data.repository.ChatRepository
 import com.mindforge.app.data.repository.ChatRepositoryImpl
-import com.mindforge.app.data.repository.ModelRepository
 import com.mindforge.app.data.repository.ModelRepositoryImpl
-import com.mindforge.app.data.repository.SettingsRepository
 import com.mindforge.app.data.repository.SettingsRepositoryImpl
+import com.mindforge.app.domain.repository.ChatRepository
+import com.mindforge.app.domain.repository.ModelRepository
+import com.mindforge.app.domain.repository.SettingsRepository
 import dagger.Binds
 import dagger.Module
 import dagger.hilt.InstallIn

@@ -3,6 +3,7 @@ package com.mindforge.app.domain.repository
 import com.mindforge.app.domain.model.DownloadedModel
 import com.mindforge.app.domain.model.GenerationConfig
 import com.mindforge.app.domain.model.HuggingFaceModel
+import com.mindforge.app.domain.model.ModelSettings
 import kotlinx.coroutines.flow.Flow
 
 interface ModelRepository {
@@ -20,4 +21,8 @@ interface ModelRepository {
     suspend fun updateGenerationConfig(config: GenerationConfig)
     suspend fun getModelPath(id: String): String?
     suspend fun isModelDownloaded(id: String): Boolean
+
+    fun getModelSettings(modelId: String): Flow<ModelSettings>
+    suspend fun getModelSettingsOnce(modelId: String): ModelSettings
+    suspend fun saveModelSettings(settings: ModelSettings)
 }

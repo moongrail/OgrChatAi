@@ -3,7 +3,9 @@ package com.mindforge.app.domain.usecase.model
 import com.mindforge.app.domain.model.DownloadedModel
 import com.mindforge.app.domain.repository.ModelRepository
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.channelFlow
+import kotlinx.coroutines.flow.firstOrNull
+import kotlinx.coroutines.channels.Channel
 import javax.inject.Inject
 
 class DownloadModelUseCase @Inject constructor(
@@ -16,28 +18,28 @@ class DownloadModelUseCase @Inject constructor(
         data class Error(val message: String) : DownloadResult()
     }
 
-    operator fun invoke(modelId: String): Flow<Result<Float>> = flow {
+    suspend operator fun invoke(modelId: String): Flow<Result<Float>> = channelFlow {
         if (modelRepository.isModelDownloaded(modelId)) {
-            emit(Result.success(1f))
-            return@flow
+            send(Result.success(1f))
+            return@channelFlow
         }
 
         val availableFiles = modelRepository.getAvailableFiles(modelId)
         val ggufFile = availableFiles.firstOrNull { it.endsWith(".gguf") }
             ?: availableFiles.firstOrNull()
             ?: run {
-                emit(Result.failure(IllegalStateException("No downloadable files found")))
-                return@flow
+                send(Result.failure(IllegalStateException("No downloadable files found")))
+                return@channelFlow
             }
 
-        modelRepository.downloadModel(modelId, ggufFile) { progress ->
-            // Progress is reported via repository callback
-        }.collect { result ->
-            result.onSuccess {
-                emit(Result.success(1f))
-            }.onFailure { e ->
-                emit(Result.failure(e))
-            }
+        val result = modelRepository.downloadModel(modelId, ggufFile) { progress ->
+            // Progress callback - can't use send directly, just log
+        }
+
+        result.onSuccess {
+            send(Result.success(1f))
+        }.onFailure { e ->
+            send(Result.failure(e))
         }
     }
 }

@@ -63,8 +63,22 @@ class ChatDetailViewModel @Inject constructor(
     private fun loadMessages() {
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true) }
-            getMessagesUseCase(chatId)
-                .onSuccess { messages ->
+            getMessagesUseCase(chatId.toString())
+                .onSuccess { chatMessages ->
+                    val messages = chatMessages.map { cm ->
+                        Message(
+                            id = cm.id.toString(),
+                            chatId = cm.chatId.toString(),
+                            content = cm.content,
+                            role = when (cm.role) {
+                                com.mindforge.app.domain.model.MessageRole.USER -> Message.Role.USER
+                                com.mindforge.app.domain.model.MessageRole.ASSISTANT -> Message.Role.ASSISTANT
+                                com.mindforge.app.domain.model.MessageRole.SYSTEM -> Message.Role.SYSTEM
+                            },
+                            timestamp = cm.timestamp,
+                            attachments = cm.attachments.map { it.id }
+                        )
+                    }
                     _uiState.update {
                         it.copy(messages = messages, isLoading = false)
                     }
