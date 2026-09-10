@@ -97,7 +97,7 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 
 ## 📋 Поддерживаемые модели
 
-Любая GGUF модель с HuggingFace. Рекомендации для Pixel 8 Pro:
+Любая GGUF модель с HuggingFace:
 
 | Модель | Размер | Скорость | Качество |
 |--------|--------|----------|----------|
