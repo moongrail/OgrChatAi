@@ -1,6 +1,6 @@
 <div align="center">
 
-# ⚡ MindForge
+# ⚡ OgrChatAi
 
 ### ИИ-чат на устройстве — Приватно, Быстро, Бесплатно
 
@@ -18,11 +18,11 @@
 
 ## 📱 О проекте
 
-MindForge — нативное Android-приложение для скачивания и запуска open-source LLM моделей из [HuggingFace](https://huggingface.co) прямо на устройстве. Общайтесь с ИИ приватно, отправляйте файлы и картинки — всё без интернета после скачивания модели.
+OgrChatAi — нативное Android-приложение для скачивания и запуска open-source LLM моделей из [HuggingFace](https://huggingface.co) прямо на устройстве. Общайтесь с ИИ приватно, отправляйте файлы и картинки — всё без интернета после скачивания модели.
 
-### Почему MindForge?
+### Почему OgrChatAi?
 
-| | Облачные ИИ-приложения | MindForge |
+| | Облачные ИИ-приложения | OgrChatAi |
 |---|:---:|:---:|
 | **Приватность** | ❌ Данные уходят на серверы | ✅ 100% на устройстве |
 | **Офлайн** | ❌ Нужен интернет | ✅ Работает без интернета |
@@ -50,7 +50,7 @@ MindForge — нативное Android-приложение для скачив�
 ## 🏗️ Архитектура
 
 ```
-com.mindforge.app/
+com.ogrchatai.app/
 ├── data/          # Слой данных
 │   ├── local/     # Room БД, DAO, сущности
 │   ├── remote/    # HuggingFace API
@@ -82,8 +82,8 @@ com.mindforge.app/
 ### Сборка
 
 ```bash
-git clone https://github.com/moongrail/MindForge.git
-cd MindForge
+git clone https://github.com/moongrail/OgrChatAi.git
+cd OgrChatAi
 ./gradlew assembleDebug
 ```
 
@@ -119,7 +119,7 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 - [x] Тёмная/светлая тема
 - [ ] Голосовой ввод
 - [ ] Экспорт чатов
-- [ ] Виджет для 홈 화면
+- [ ] Виджет для домашнего экрана
 - [ ] Оптимизация для планшетов
 
 ---

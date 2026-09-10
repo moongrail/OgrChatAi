@@ -1,6 +1,6 @@
 ---
 name: Feature Request
-about: Suggest an idea for MindForge
+about: Suggest an idea for OgrChatAi
 title: '[FEATURE] '
 labels: enhancement
 assignees: ''

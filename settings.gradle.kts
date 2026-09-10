@@ -25,5 +25,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "MindForge"
+rootProject.name = "OgrChatAi"
 include(":app")

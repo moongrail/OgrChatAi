@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to MindForge will be documented in this file.
+All notable changes to OgrChatAi will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
@@ -20,6 +20,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 📱 Edge-to-edge display support
 - 🔒 Privacy-first architecture (no telemetry, no accounts)
 - 🚀 Optimized for Pixel 8 Pro and modern Android devices
+- 🔐 AES-GCM encryption for user messages (Android Keystore)
+- 📁 Folder system for organizing chats
+- 🏷️ Auto-naming chats by topic (LM Studio style)
 
 ### Architecture
 
@@ -37,3 +40,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - All data stored locally on device
 - Open source codebase
 - Minimal permission requests
+- AES-GCM encryption using Android Keystore

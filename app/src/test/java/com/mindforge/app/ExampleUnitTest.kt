@@ -1,4 +1,4 @@
-package com.mindforge.app
+package com.ogrchatai.app
 
 import org.junit.Test
 

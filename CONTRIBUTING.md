@@ -1,11 +1,11 @@
-# Contributing to MindForge
+# Contributing to OgrChatAi
 
-Thank you for your interest in contributing to MindForge! This document provides guidelines and information about contributing to this project.
+Thank you for your interest in contributing to OgrChatAi! This document provides guidelines and information about contributing to this project.
 
 ## Getting Started
 
 1. Fork the repository
-2. Clone your fork: `git clone https://github.com/your-username/MindForge.git`
+2. Clone your fork: `git clone https://github.com/your-username/OgrChatAi.git`
 3. Create a feature branch: `git checkout -b feature/amazing-feature`
 4. Make your changes
 5. Commit: `git commit -m 'Add amazing feature'`
