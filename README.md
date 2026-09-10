@@ -122,23 +122,6 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 - [ ] Виджет для домашнего экрана
 - [ ] Оптимизация для планшетов
 
----
-
-## 🤝 Участие
-
-См. [CONTRIBUTING.md](CONTRIBUTING.md).
-
----
-
 ## 📄 Лицензия
 
 [Apache License 2.0](LICENSE)
-
----
-
-## 🙏 Благодарности
-
-- [HuggingFace](https://huggingface.co) — хаб моделей
-- [llama.cpp](https://github.com/ggerganov/llama.cpp) — формат GGUF
-- [Jetpack Compose](https://developer.android.com/jetpack/compose) — UI
-- [Material Design 3](https://m3.material.io) — дизайн-система
