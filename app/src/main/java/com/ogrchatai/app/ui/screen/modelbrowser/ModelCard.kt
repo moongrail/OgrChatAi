@@ -23,7 +23,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CloudDownload
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Memory
+import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.ThumbUp
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -44,31 +47,35 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.ogrchatai.app.domain.model.ModelInfo
 import com.ogrchatai.app.ui.components.ModelChip
-import com.ogrchatai.app.ui.theme.ErrorLight
-import com.ogrchatai.app.ui.theme.SuccessLight
 import com.ogrchatai.app.ui.viewmodel.DownloadState
-import com.ogrchatai.app.util.ModelUtils
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ModelCard(
     model: ModelInfo,
     downloadState: DownloadState?,
+    isDownloaded: Boolean,
+    deviceRamMb: Long,
     onDownloadClick: () -> Unit,
+    onCancelDownload: () -> Unit = {},
     onModelClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val isDownloading = downloadState?.isDownloading == true
-    val isComplete = downloadState?.isComplete == true
+    val isComplete = downloadState?.isComplete == true || isDownloaded
     val progress by animateFloatAsState(
         targetValue = downloadState?.progress ?: 0f,
         label = "download_progress"
     )
 
+    val modelSizeMb = model.totalSize / (1024 * 1024)
+    val fitsInRam = if (deviceRamMb > 0 && modelSizeMb > 0) {
+        modelSizeMb < deviceRamMb * 0.75
+    } else null
+
     Card(
         modifier = modifier
-            .fillMaxWidth()
-            .clickable(onClick = onModelClick),
+            .fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surface
@@ -87,7 +94,9 @@ fun ModelCard(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.Top
             ) {
-                Column(modifier = Modifier.weight(1f)) {
+                Column(modifier = Modifier
+                    .weight(1f)
+                    .clickable(onClick = onModelClick)) {
                     Text(
                         text = model.name,
                         style = MaterialTheme.typography.titleMedium,
@@ -108,62 +117,73 @@ fun ModelCard(
 
                 Spacer(modifier = Modifier.width(12.dp))
 
-                if (isComplete) {
-                    Surface(
-                        modifier = Modifier.size(40.dp),
-                        shape = CircleShape,
-                        color = SuccessLight.copy(alpha = 0.15f)
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                imageVector = Icons.Filled.Check,
-                                contentDescription = "Downloaded",
-                                tint = SuccessLight,
-                                modifier = Modifier.size(22.dp)
-                            )
+                when {
+                    isComplete -> {
+                        Surface(
+                            modifier = Modifier.size(40.dp),
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.primaryContainer
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Filled.Check,
+                                    contentDescription = "Downloaded",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
                         }
                     }
-                } else if (isDownloading) {
-                    Box(
-                        modifier = Modifier.size(40.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        CircularProgressIndicator(
-                            progress = { progress },
-                            modifier = Modifier.size(36.dp),
-                            strokeWidth = 3.dp,
-                            color = MaterialTheme.colorScheme.primary,
-                            trackColor = MaterialTheme.colorScheme.surfaceVariant
-                        )
-                        Text(
-                            text = "${(progress * 100).toInt()}%",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.primary
-                        )
+                    isDownloading -> {
+                        Box(
+                            modifier = Modifier.size(40.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            CircularProgressIndicator(
+                                progress = { progress },
+                                modifier = Modifier.size(36.dp),
+                                strokeWidth = 3.dp,
+                                color = MaterialTheme.colorScheme.primary,
+                                trackColor = MaterialTheme.colorScheme.surfaceVariant
+                            )
+                            IconButton(
+                                onClick = onCancelDownload,
+                                modifier = Modifier.size(24.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.Close,
+                                    contentDescription = "Cancel",
+                                    modifier = Modifier.size(14.dp),
+                                    tint = MaterialTheme.colorScheme.error
+                                )
+                            }
+                        }
                     }
-                } else {
-                    IconButton(
-                        onClick = onDownloadClick,
-                        modifier = Modifier
-                            .size(40.dp)
-                            .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.primaryContainer)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Filled.Download,
-                            contentDescription = "Download",
-                            tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                            modifier = Modifier.size(20.dp)
-                        )
+                    else -> {
+                        IconButton(
+                            onClick = onDownloadClick,
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.primaryContainer)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Download,
+                                contentDescription = "Download",
+                                tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(8.dp))
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(16.dp)
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 StatItem(
                     icon = Icons.Filled.CloudDownload,
@@ -174,11 +194,60 @@ fun ModelCard(
                     value = model.likes.toString()
                 )
                 if (model.totalSize > 0) {
-                    Text(
-                        text = model.formattedSize,
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    StatItem(
+                        icon = Icons.Filled.Memory,
+                        value = model.formattedSize
                     )
+                }
+            }
+
+            if (fitsInRam == false && modelSizeMb > 0) {
+                Spacer(modifier = Modifier.height(6.dp))
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Icon(
+                            Icons.Filled.Memory,
+                            contentDescription = null,
+                            modifier = Modifier.size(14.dp),
+                            tint = MaterialTheme.colorScheme.error
+                        )
+                        Text(
+                            text = "Model ~${modelSizeMb}MB may exceed available RAM (${deviceRamMb}MB)",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                }
+            } else if (fitsInRam == true && modelSizeMb > 0) {
+                Spacer(modifier = Modifier.height(6.dp))
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Icon(
+                            Icons.Filled.Speed,
+                            contentDescription = null,
+                            modifier = Modifier.size(14.dp),
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                        Text(
+                            text = "Compatible with your device (${modelSizeMb}MB)",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
                 }
             }
 
@@ -187,7 +256,7 @@ fun ModelCard(
                 enter = fadeIn(),
                 exit = fadeOut()
             ) {
-                Column(modifier = Modifier.padding(top = 12.dp)) {
+                Column(modifier = Modifier.padding(top = 8.dp)) {
                     LinearProgressIndicator(
                         progress = { progress },
                         modifier = Modifier
@@ -197,12 +266,32 @@ fun ModelCard(
                         color = MaterialTheme.colorScheme.primary,
                         trackColor = MaterialTheme.colorScheme.surfaceVariant
                     )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = "${(progress * 100).toInt()}%",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        val speed = downloadState?.speedBytesPerSec ?: 0L
+                        if (speed > 0) {
+                            val speedKb = speed / 1024
+                            Text(
+                                text = if (speedKb > 1024) "${speedKb / 1024} MB/s" else "$speedKb KB/s",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
                 }
             }
 
             val quantTags = model.quantizationTags
             if (quantTags.isNotEmpty()) {
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(8.dp))
                 FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp)
@@ -217,7 +306,7 @@ fun ModelCard(
             }
 
             if (model.tags.isNotEmpty()) {
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(6.dp))
                 FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                     verticalArrangement = Arrangement.spacedBy(4.dp)

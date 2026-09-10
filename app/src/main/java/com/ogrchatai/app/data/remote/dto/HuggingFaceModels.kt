@@ -1,5 +1,6 @@
 package com.ogrchatai.app.data.remote.dto
 
+import com.google.gson.annotations.SerializedName
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
@@ -20,10 +21,15 @@ data class HuggingFaceModel(
 
 @Serializable
 data class HuggingFaceModelFile(
-    val filename: String,
+    @SerializedName("rfilename")
+    val rfilename: String = "",
+    @Transient
+    val filename: String = "",
     val size: Long? = null,
     val lfs: HuggingFaceLfs? = null
-)
+) {
+    val name: String get() = rfilename.ifEmpty { filename }
+}
 
 @Serializable
 data class HuggingFaceLfs(
@@ -33,7 +39,7 @@ data class HuggingFaceLfs(
 
 @Serializable
 data class HuggingFaceCardData(
-    val language: String? = null,
+    val language: List<String>? = null,
     val license: String? = null,
     val tags: List<String> = emptyList(),
     val modelId: String? = null,
