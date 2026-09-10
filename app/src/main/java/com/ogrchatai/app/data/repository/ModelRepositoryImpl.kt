@@ -50,7 +50,8 @@ class ModelRepositoryImpl @Inject constructor(
                 val response = apiClient.api.searchModels(
                     query = query,
                     sort = "downloads",
-                    limit = 50
+                    limit = 50,
+                    filter = "gguf"
                 )
                 response.map { dto ->
                     HuggingFaceModel(
@@ -65,8 +66,8 @@ class ModelRepositoryImpl @Inject constructor(
                         lastModified = dto.lastModified,
                         siblings = dto.siblings?.map { sib ->
                             Sibling(
-                                filename = sib.filename ?: "",
-                                rfilename = sib.filename ?: "",
+                                filename = sib.name,
+                                rfilename = sib.name,
                                 size = sib.size
                             )
                         } ?: emptyList()
@@ -148,8 +149,8 @@ class ModelRepositoryImpl @Inject constructor(
             try {
                 val modelInfo = apiClient.api.getModelInfo(modelId)
                 modelInfo.siblings
-                    ?.filter { it.filename?.endsWith(".gguf") == true }
-                    ?.map { it.filename ?: "" }
+                    ?.filter { it.name.endsWith(".gguf") }
+                    ?.map { it.name }
                     ?: emptyList()
             } catch (e: Exception) {
                 emptyList()

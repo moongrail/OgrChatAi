@@ -34,6 +34,13 @@ class SearchModelsUseCase @Inject constructor(
                     lastModified = hf.lastModified,
                     siblings = hf.siblings
                 )
+            }.filter { model ->
+                model.siblings.any { sib ->
+                    sib.rfilename.endsWith(".gguf", ignoreCase = true) ||
+                        sib.filename.endsWith(".gguf", ignoreCase = true)
+                } || model.tags.any { tag ->
+                    tag.contains("gguf", ignoreCase = true)
+                }
             }
 
             if (filters.quantization != null) {
@@ -43,6 +50,14 @@ class SearchModelsUseCase @Inject constructor(
                     } || model.siblings.any { sib ->
                         sib.rfilename.contains(filters.quantization!!, ignoreCase = true)
                     }
+                }
+            }
+
+            if (filters.architecture != null) {
+                models = models.filter { model ->
+                    model.tags.any { tag ->
+                        tag.contains(filters.architecture!!, ignoreCase = true)
+                    } || model.name.contains(filters.architecture!!, ignoreCase = true)
                 }
             }
 
