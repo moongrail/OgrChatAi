@@ -2,114 +2,92 @@
 
 # ⚡ MindForge
 
-### On-Device AI Chat — Private, Fast, Free
+### ИИ-чат на устройстве — Приватно, Быстро, Бесплатно
 
-[![Kotlin](https://img.shields.io/badge/Kotlin-2.1.0-7F52FF?logo=kotlin&logoColor=white)](https://kotlinlang.org)
-[![Jetpack Compose](https://img.shields.io/badge/Jetpack%20Compose-2024.12-4285F4?logo=jetpackcompose&logoColor=white)](https://developer.android.com/jetpack/compose)
-[![Android](https://img.shields.io/badge/Android-8%2B-3DDC84?logo=android&logoColor=white)](https://developer.android.com)
-[![API](https://img.shields.io/badge/API-26%2B-brightgreen)](https://developer.android.com/studio/releases/platforms)
-[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![PRs](https://img.shields.io/badge/PRs-Welcome-brightgreen.svg)](CONTRIBUTING.md)
+[![Kotlin](https://img.shields.io/badge/Kotlin-2.1.0-7F52FF?style=flat-square&logo=kotlin&logoColor=white)](https://kotlinlang.org)
+[![Compose](https://img.shields.io/badge/Jetpack_Compose-2024.12-4285F4?style=flat-square&logo=jetpackcompose&logoColor=white)](https://developer.android.com/jetpack/compose)
+[![Android](https://img.shields.io/badge/Android-8%2B-3DDC84?style=flat-square&logo=android&logoColor=white)](https://developer.android.com)
+[![API](https://img.shields.io/badge/API-26%2B-brightgreen?style=flat-square)](https://developer.android.com/studio/releases/platforms)
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue?style=flat-square)](LICENSE)
 
-<br/>
-
-**Chat with AI models directly on your phone. No cloud. No data collection. Just you and the model.**
-
-[Download APK](https://github.com/moongrail/MindForge/releases) · [Report Bug](https://github.com/moongrail/MindForge/issues) · [Request Feature](https://github.com/moongrail/MindForge/issues)
+**Общайтесь с ИИ прямо на телефоне. Без облака. Без сбора данных. Только вы и модель.**
 
 </div>
 
 ---
 
-## 📱 About
+## 📱 О проекте
 
-MindForge is a native Android application that lets you download and run open-source LLM models from [HuggingFace](https://huggingface.co) directly on your device. Chat with AI privately, send files and images, and enjoy a beautiful Material3 interface — all without an internet connection after model download.
+MindForge — нативное Android-приложение для скачивания и запуска open-source LLM моделей из [HuggingFace](https://huggingface.co) прямо на устройстве. Общайтесь с ИИ приватно, отправляйте файлы и картинки — всё без интернета после скачивания модели.
 
-### Why MindForge?
+### Почему MindForge?
 
-| Feature | Cloud AI Apps | MindForge |
-|---------|:------------:|:---------:|
-| **Privacy** | ❌ Data sent to servers | ✅ 100% on-device |
-| **Offline** | ❌ Requires internet | ✅ Works offline |
-| **Free** | ❌ Subscription needed | ✅ Always free |
-| **Speed** | ⚡ Network dependent | 🚀 Local inference |
-| **File Support** | ⚠️ Limited | ✅ Images & documents |
-
----
-
-## ✨ Features
-
-- 🤖 **On-Device Inference** — Run GGUF models locally using optimized inference engine
-- 📦 **HuggingFace Integration** — Search and download thousands of open-source models
-- 💬 **Real-time Chat** — Streaming responses with typing animation
-- 📎 **File & Image Support** — Send images and documents to the AI
-- 🌍 **Bilingual Interface** — Full Russian and English localization
-- 🎨 **Beautiful Design** — Material3 with dark/light theme support
-- ⚙️ **Configurable** — Adjust temperature, top-p, max tokens
-- 🔒 **Private** — No telemetry, no data collection, no accounts
-- 🚀 **Performant** — Optimized for Pixel 8 Pro and modern devices
-- 📱 **Native** — 100% Kotlin with Jetpack Compose
+| | Облачные ИИ-приложения | MindForge |
+|---|:---:|:---:|
+| **Приватность** | ❌ Данные уходят на серверы | ✅ 100% на устройстве |
+| **Офлайн** | ❌ Нужен интернет | ✅ Работает без интернета |
+| **Бесплатно** | ❌ Нужна подписка | ✅ Всегда бесплатно |
+| **Скорость** | ⚡ Зависит от сети | 🚀 Локальная инференция |
+| **Файлы** | ⚠️ Ограниченно | ✅ Картинки и документы |
 
 ---
 
-## 🏗️ Architecture
+## ✨ Возможности
+
+- 🤖 **Локальная инференция** — запуск GGUF моделей через оптимизированный движок
+- 📦 **Интеграция с HuggingFace** — поиск и скачивание тысяч моделей
+- 💬 **Чат в реальном времени** — стриминг ответов с анимацией набора
+- 📎 **Файлы и картинки** — отправка изображений и документов ИИ
+- 🌍 **Двуязычный интерфейс** — русский и английский
+- 🎨 **Красивый дизайн** — Material3, тёмная/светлая тема
+- ⚙️ **Настраиваемый** — температура, top-p, макс. токенов
+- 🔒 **Приватно** — без телеметрии, без аккаунтов
+- 🚀 **Быстро** — оптимизировано для Pixel 8 Pro
+- 📱 **Нативно** — 100% Kotlin + Jetpack Compose
+
+---
+
+## 🏗️ Архитектура
 
 ```
 com.mindforge.app/
-├── data/                    # Data layer
-│   ├── local/              # Room database, DAOs, entities
-│   ├── remote/             # HuggingFace API, DTOs
-│   ├── repository/         # Repository implementations
-│   ├── preferences/        # DataStore preferences
-│   └── ml/                 # Inference engine
-├── domain/                  # Domain layer
-│   ├── model/              # Domain models
-│   ├── repository/         # Repository interfaces
-│   └── usecase/            # Business logic
-├── ui/                      # Presentation layer
-│   ├── screen/             # Compose screens
-│   ├── viewmodel/          # ViewModels
-│   ├── components/         # Reusable components
-│   ├── navigation/         # Navigation graph
-│   └── theme/              # Material3 theme
-├── di/                      # Hilt modules
-└── util/                    # Utilities
+├── data/          # Слой данных
+│   ├── local/     # Room БД, DAO, сущности
+│   ├── remote/    # HuggingFace API
+│   ├── ml/        # Движок инференции
+│   └── preferences/ # DataStore настройки
+├── domain/        # Доменный слой
+│   ├── model/     # Модели данных
+│   ├── repository/# Интерфейсы репозиториев
+│   └── usecase/   # Бизнес-логика
+├── ui/            # Слой представления
+│   ├── screen/    # Compose экраны
+│   ├── viewmodel/ # ViewModel
+│   └── theme/     # Material3 тема
+└── di/            # Hilt модули
 ```
 
-**Tech Stack:**
-- **Language:** Kotlin 2.1
-- **UI:** Jetpack Compose + Material3
-- **Architecture:** MVVM + Clean Architecture
-- **DI:** Hilt
-- **Database:** Room
-- **Network:** Retrofit + OkHttp + Kotlinx Serialization
-- **Images:** Coil
-- **Settings:** DataStore Preferences
-- **Navigation:** Compose Navigation
+**Стек:** Kotlin 2.1 · Jetpack Compose · Material3 · MVVM · Clean Architecture · Hilt · Room · Retrofit · Coil · DataStore
 
 ---
 
-## 🚀 Getting Started
+## 🚀 Запуск
 
-### Prerequisites
+### Требования
 
 - Android Studio Ladybug (2024.2+)
 - JDK 17
 - Android SDK 35
-- Pixel 8 Pro or equivalent (API 26+)
 
-### Build
+### Сборка
 
 ```bash
-# Clone the repository
 git clone https://github.com/moongrail/MindForge.git
-
-# Open in Android Studio
-# Or build from command line
+cd MindForge
 ./gradlew assembleDebug
 ```
 
-### Install
+### Установка
 
 ```bash
 adb install app/build/outputs/apk/debug/app-debug.apk
@@ -117,12 +95,12 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 
 ---
 
-## 📋 Supported Models
+## 📋 Поддерживаемые модели
 
-MindForge supports any GGUF-format model from HuggingFace. Recommended models for Pixel 8 Pro:
+Любая GGUF модель с HuggingFace. Рекомендации для Pixel 8 Pro:
 
-| Model | Size | Speed | Quality |
-|-------|------|-------|---------|
+| Модель | Размер | Скорость | Качество |
+|--------|--------|----------|----------|
 | [Phi-3 Mini](https://huggingface.co/microsoft/Phi-3-mini-4k-instruct-gguf) | 2.3 GB | ⚡⚡⚡ | ⭐⭐⭐ |
 | [Llama 3.2 3B](https://huggingface.co/bartowski/Llama-3.2-3B-Instruct-GGUF) | 2 GB | ⚡⚡⚡ | ⭐⭐⭐ |
 | [Gemma 2 2B](https://huggingface.co/bartowski/gemma-2-2b-it-GGUF) | 1.5 GB | ⚡⚡⚡⚡ | ⭐⭐ |
@@ -131,54 +109,36 @@ MindForge supports any GGUF-format model from HuggingFace. Recommended models fo
 
 ---
 
-## 📸 Screenshots
+## 🛣️ Дорожная карта
 
-> Screenshots coming soon! Want to contribute? See [CONTRIBUTING.md](CONTRIBUTING.md).
-
----
-
-## 🛣️ Roadmap
-
-- [x] Chat interface with streaming
-- [x] HuggingFace model browser
-- [x] On-device GGUF inference
-- [x] File & image attachments
-- [x] Russian/English localization
-- [x] Dark/Light theme
-- [ ] Voice input
-- [ ] Multiple model conversation
-- [ ] Chat export (JSON/Markdown)
-- [ ] Model fine-tuning support
-- [ ] Widget for home screen
-- [ ] Tablet-optimized layout
+- [x] Чат со стримингом
+- [x] Браузер моделей HuggingFace
+- [x] Локальная GGUF инференция
+- [x] Файлы и картинки
+- [x] Русский/английский
+- [x] Тёмная/светлая тема
+- [ ] Голосовой ввод
+- [ ] Экспорт чатов
+- [ ] Виджет для 홈 화면
+- [ ] Оптимизация для планшетов
 
 ---
 
-## 🤝 Contributing
+## 🤝 Участие
 
-Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
-
----
-
-## 📄 License
-
-This project is licensed under the Apache License 2.0 — see [LICENSE](LICENSE) for details.
+См. [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ---
 
-## 🙏 Acknowledgments
+## 📄 Лицензия
 
-- [HuggingFace](https://huggingface.co) — Model hub
-- [llama.cpp](https://github.com/ggerganov/llama.cpp) — GGUF format
-- [Jetpack Compose](https://developer.android.com/jetpack/compose) — UI toolkit
-- [Material Design 3](https://m3.material.io) — Design system
+[Apache License 2.0](LICENSE)
 
 ---
 
-<div align="center">
+## 🙏 Благодарности
 
-**Made with ❤️ for the open-source AI community**
-
-[![GitHub](https://img.shields.io/github/stars/moongrail/MindForge?style=social)](https://github.com/moongrail/MindForge)
-
-</div>
+- [HuggingFace](https://huggingface.co) — хаб моделей
+- [llama.cpp](https://github.com/ggerganov/llama.cpp) — формат GGUF
+- [Jetpack Compose](https://developer.android.com/jetpack/compose) — UI
+- [Material Design 3](https://m3.material.io) — дизайн-система
