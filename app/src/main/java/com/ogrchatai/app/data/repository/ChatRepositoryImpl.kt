@@ -10,9 +10,12 @@ import com.ogrchatai.app.domain.model.MessageRole
 import com.ogrchatai.app.domain.repository.ChatRepository
 import com.ogrchatai.app.util.MessageCrypto
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -66,19 +69,40 @@ class ChatRepositoryImpl @Inject constructor(
     }
 
     override suspend fun insertMessage(message: ChatMessage): Long {
-        val encrypted = crypto.encrypt(context, message.content)
+        android.util.Log.d("ChatRepo", "insertMessage: chatId=${message.chatId}, role=${message.role}")
+        val encrypted = try {
+            withContext(Dispatchers.IO) {
+                withTimeoutOrNull(3000L) {
+                    crypto.encrypt(context, message.content)
+                }
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("ChatRepo", "encrypt failed: ${e.message}")
+            null
+        }
+        android.util.Log.d("ChatRepo", "encrypt done, encrypted=${encrypted != null}")
         val entity = message.toEntity().copy(
-            encryptedContent = encrypted.ciphertext,
-            contentNonce = encrypted.nonce
+            encryptedContent = encrypted?.ciphertext,
+            contentNonce = encrypted?.nonce
         )
-        return chatDao.insertMessage(entity)
+        val id = chatDao.insertMessage(entity)
+        android.util.Log.d("ChatRepo", "insertMessage done, id=$id")
+        return id
     }
 
     override suspend fun updateMessage(message: ChatMessage) {
-        val encrypted = crypto.encrypt(context, message.content)
+        val encrypted = try {
+            withContext(Dispatchers.IO) {
+                withTimeoutOrNull(3000L) {
+                    crypto.encrypt(context, message.content)
+                }
+            }
+        } catch (e: Exception) {
+            null
+        }
         val entity = message.toEntity().copy(
-            encryptedContent = encrypted.ciphertext,
-            contentNonce = encrypted.nonce
+            encryptedContent = encrypted?.ciphertext,
+            contentNonce = encrypted?.nonce
         )
         chatDao.updateMessage(entity)
     }
@@ -119,6 +143,7 @@ class ChatRepositoryImpl @Inject constructor(
                     nonce = entity.contentNonce!!
                 ))
             } catch (e: Exception) {
+                android.util.Log.e("ChatRepo", "decrypt failed: ${e.message}")
                 entity.content
             }
         } else {
