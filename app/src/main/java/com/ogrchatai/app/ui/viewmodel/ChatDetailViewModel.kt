@@ -9,6 +9,7 @@ import com.ogrchatai.app.domain.model.Message
 import com.ogrchatai.app.domain.model.SendMessageResponse
 import com.ogrchatai.app.domain.usecase.chat.GetMessagesUseCase
 import com.ogrchatai.app.domain.usecase.chat.SendMessageUseCase
+import com.ogrchatai.app.domain.usecase.chat.SendMessageException
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -29,7 +30,8 @@ data class ChatDetailUiState(
     val attachments: List<Attachment> = emptyList(),
     val streamingToken: String = "",
     val isLoading: Boolean = false,
-    val error: String? = null
+    val error: String? = null,
+    val modelStatus: String = ""
 )
 
 sealed interface ChatDetailEvent {
@@ -63,31 +65,37 @@ class ChatDetailViewModel @Inject constructor(
     private fun loadMessages() {
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true) }
-            getMessagesUseCase(chatId.toString())
-                .onSuccess { chatMessages ->
-                    val messages = chatMessages.map { cm ->
-                        Message(
-                            id = cm.id.toString(),
-                            chatId = cm.chatId.toString(),
-                            content = cm.content,
-                            role = when (cm.role) {
-                                com.ogrchatai.app.domain.model.MessageRole.USER -> Message.Role.USER
-                                com.ogrchatai.app.domain.model.MessageRole.ASSISTANT -> Message.Role.ASSISTANT
-                                com.ogrchatai.app.domain.model.MessageRole.SYSTEM -> Message.Role.SYSTEM
-                            },
-                            timestamp = cm.timestamp,
-                            attachments = cm.attachments.map { it.id }
-                        )
+            try {
+                getMessagesUseCase(chatId.toString())
+                    .onSuccess { chatMessages ->
+                        val messages = chatMessages.map { cm ->
+                            Message(
+                                id = cm.id.toString(),
+                                chatId = cm.chatId.toString(),
+                                content = cm.content,
+                                role = when (cm.role) {
+                                    com.ogrchatai.app.domain.model.MessageRole.USER -> Message.Role.USER
+                                    com.ogrchatai.app.domain.model.MessageRole.ASSISTANT -> Message.Role.ASSISTANT
+                                    com.ogrchatai.app.domain.model.MessageRole.SYSTEM -> Message.Role.SYSTEM
+                                },
+                                timestamp = cm.timestamp,
+                                attachments = cm.attachments.map { it.id }
+                            )
+                        }
+                        _uiState.update {
+                            it.copy(messages = messages, isLoading = false)
+                        }
                     }
-                    _uiState.update {
-                        it.copy(messages = messages, isLoading = false)
+                    .onFailure { throwable ->
+                        _uiState.update {
+                            it.copy(isLoading = false, error = throwable.message)
+                        }
                     }
+            } catch (e: Exception) {
+                _uiState.update {
+                    it.copy(isLoading = false, error = e.message)
                 }
-                .onFailure { throwable ->
-                    _uiState.update {
-                        it.copy(isLoading = false, error = throwable.message)
-                    }
-                }
+            }
         }
     }
 
@@ -100,6 +108,8 @@ class ChatDetailViewModel @Inject constructor(
         val content = state.currentInput.trim()
         if (content.isEmpty() && state.attachments.isEmpty()) return
         if (state.isGenerating) return
+
+        android.util.Log.d("ChatDetailVM", "sendMessage: chatId=$chatId, content='${content.take(20)}'")
 
         val userMessage = Message(
             id = "msg_${System.currentTimeMillis()}",
@@ -117,59 +127,76 @@ class ChatDetailViewModel @Inject constructor(
                 attachments = emptyList(),
                 isGenerating = true,
                 streamingToken = "",
-                error = null
+                error = null,
+                modelStatus = "Loading model..."
             )
         }
 
         generationJob = viewModelScope.launch {
-            sendMessageUseCase(chatId, content, null, state.attachments)
-                .collect { result ->
-                    result.onSuccess { response ->
-                        when {
-                            response.isStreaming -> {
-                                _uiState.update { currentState ->
-                                    currentState.copy(
-                                        streamingToken = currentState.streamingToken + response.token
+            try {
+                sendMessageUseCase(chatId, content, null, state.attachments)
+                    .collect { result ->
+                        android.util.Log.d("ChatDetailVM", "Flow result: success=${result.isSuccess}, isStreaming=${result.getOrNull()?.isStreaming}, isComplete=${result.getOrNull()?.isComplete}, error=${result.exceptionOrNull()?.message}")
+                        result.onSuccess { response ->
+                            when {
+                                response.isStreaming -> {
+                                    _uiState.update { currentState ->
+                                        currentState.copy(
+                                            streamingToken = currentState.streamingToken + response.token,
+                                            modelStatus = ""
+                                        )
+                                    }
+                                }
+                                response.isComplete -> {
+                                    val assistantMessage = Message(
+                                        id = response.messageId ?: "msg_${System.currentTimeMillis()}",
+                                        chatId = chatId.toString(),
+                                        content = response.fullContent.ifEmpty { _uiState.value.streamingToken },
+                                        role = Message.Role.ASSISTANT,
+                                        timestamp = System.currentTimeMillis()
                                     )
+                                    _uiState.update { currentState ->
+                                        currentState.copy(
+                                            messages = currentState.messages + assistantMessage,
+                                            isGenerating = false,
+                                            streamingToken = "",
+                                            modelStatus = ""
+                                        )
+                                    }
+                                }
+                                response.isError -> {
+                                    _uiState.update { currentState ->
+                                        currentState.copy(
+                                            isGenerating = false,
+                                            streamingToken = "",
+                                            error = response.errorMessage,
+                                            modelStatus = ""
+                                        )
+                                    }
                                 }
                             }
-                            response.isComplete -> {
-                                val assistantMessage = Message(
-                                    id = response.messageId ?: "msg_${System.currentTimeMillis()}",
-                                    chatId = chatId.toString(),
-                                    content = _uiState.value.streamingToken.ifEmpty { response.fullContent },
-                                    role = Message.Role.ASSISTANT,
-                                    timestamp = System.currentTimeMillis()
+                        }
+                        result.onFailure { throwable ->
+                            _uiState.update { currentState ->
+                                currentState.copy(
+                                    isGenerating = false,
+                                    streamingToken = "",
+                                    error = throwable.message ?: "Unknown error",
+                                    modelStatus = ""
                                 )
-                                _uiState.update { currentState ->
-                                    currentState.copy(
-                                        messages = currentState.messages + assistantMessage,
-                                        isGenerating = false,
-                                        streamingToken = ""
-                                    )
-                                }
-                            }
-                            response.isError -> {
-                                _uiState.update { currentState ->
-                                    currentState.copy(
-                                        isGenerating = false,
-                                        streamingToken = "",
-                                        error = response.errorMessage
-                                    )
-                                }
                             }
                         }
                     }
-                    result.onFailure { throwable ->
-                        _uiState.update { currentState ->
-                            currentState.copy(
-                                isGenerating = false,
-                                streamingToken = "",
-                                error = throwable.message
-                            )
-                        }
-                    }
+            } catch (e: Exception) {
+                _uiState.update { currentState ->
+                    currentState.copy(
+                        isGenerating = false,
+                        streamingToken = "",
+                        error = e.message ?: "Unknown error",
+                        modelStatus = ""
+                    )
                 }
+            }
         }
     }
 
@@ -196,6 +223,10 @@ class ChatDetailViewModel @Inject constructor(
         } else {
             _uiState.update { it.copy(isGenerating = false) }
         }
+    }
+
+    fun clearError() {
+        _uiState.update { it.copy(error = null) }
     }
 
     fun addAttachment(uri: Uri, name: String, mimeType: String) {

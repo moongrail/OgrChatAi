@@ -1,5 +1,7 @@
 package com.ogrchatai.app.domain.usecase.chat
 
+import android.util.Log
+import com.ogrchatai.app.data.ml.InferenceEngine
 import com.ogrchatai.app.domain.model.Attachment
 import com.ogrchatai.app.domain.model.ChatMessage
 import com.ogrchatai.app.domain.model.GenerationConfig
@@ -15,7 +17,8 @@ import javax.inject.Inject
 
 class SendMessageUseCase @Inject constructor(
     private val chatRepository: ChatRepository,
-    private val modelRepository: ModelRepository
+    private val modelRepository: ModelRepository,
+    private val inferenceEngine: InferenceEngine
 ) {
     suspend operator fun invoke(
         chatId: Long,
@@ -24,6 +27,7 @@ class SendMessageUseCase @Inject constructor(
         attachments: List<Attachment> = emptyList(),
         config: GenerationConfig = GenerationConfig.DEFAULT
     ): Flow<Result<SendMessageResponse>> {
+        Log.d(TAG, "invoke called: chatId=$chatId, content='${content.take(20)}', modelId=$modelId")
         require(content.isNotBlank() || attachments.isNotEmpty()) { "Message content cannot be blank" }
 
         val userMessage = ChatMessage(
@@ -32,28 +36,89 @@ class SendMessageUseCase @Inject constructor(
             content = content,
             attachments = attachments
         )
+        Log.d(TAG, "About to insertMessage")
         chatRepository.insertMessage(userMessage)
+        Log.d(TAG, "insertMessage done, getting chat")
 
         val chat = chatRepository.getChatById(chatId).firstOrNull()
-            ?: throw IllegalStateException("Chat not found")
+        if (chat == null) {
+            Log.e(TAG, "Chat not found for chatId=$chatId")
+            return kotlinx.coroutines.flow.flow {
+                emit(Result.failure(SendMessageException("Chat not found")))
+            }
+        }
+        Log.d(TAG, "Chat found: id=${chat.id}, modelId='${chat.modelId}'")
 
         val messages = chatRepository.getMessages(chatId).firstOrNull().orEmpty()
         val chatHistory = messages.map { "${it.role.name}: ${it.content}" }
 
         val usedModelId = modelId ?: chat.modelId
+        Log.d(TAG, "usedModelId='$usedModelId'")
         val modelPath = modelRepository.getModelPath(usedModelId)
-            ?: throw IllegalStateException("Model not found: $usedModelId")
+        if (modelPath == null) {
+            Log.e(TAG, "Model path not found for modelId='$usedModelId'")
+            return kotlinx.coroutines.flow.flow {
+                emit(Result.failure(SendMessageException("Model not found: $usedModelId. Please download it first.")))
+            }
+        }
+        Log.d(TAG, "Model path: $modelPath")
 
         val prompt = buildPrompt(chatHistory, config.systemPrompt)
 
-        return callbackFlow {
-            val sb = StringBuilder()
-            trySend(Result.success(SendMessageResponse(token = "")))
+        val genConfig = InferenceEngine.GenerationConfig(
+            maxTokens = config.maxTokens,
+            temperature = config.temperature,
+            topP = config.topP,
+            topK = config.topK,
+            repeatPenalty = config.repeatPenalty,
+            stopSequences = config.stopSequences
+        )
 
-            awaitClose {
-                if (sb.isNotEmpty()) {
-                    // Streaming completed
+        return callbackFlow {
+            try {
+                Log.d(TAG, "Loading model: $usedModelId from $modelPath")
+                val loadResult = inferenceEngine.loadModel(usedModelId, modelPath)
+                if (loadResult.isFailure) {
+                    Log.e(TAG, "Model load failed: ${loadResult.exceptionOrNull()?.message}")
+                    trySend(Result.failure(SendMessageException(
+                        "Failed to load model: ${loadResult.exceptionOrNull()?.message}"
+                    )))
+                    close()
+                    return@callbackFlow
                 }
+                Log.d(TAG, "Model loaded successfully, starting generation")
+
+                trySend(Result.success(SendMessageResponse(token = "")))
+
+                val stream = inferenceEngine.generateTextStream(usedModelId, prompt, genConfig)
+                val sb = StringBuilder()
+
+                stream.collect { token ->
+                    sb.append(token.text)
+                    trySend(Result.success(
+                        SendMessageResponse(
+                            isStreaming = true,
+                            token = token.text
+                        )
+                    ))
+                }
+
+                val fullContent = sb.toString()
+                Log.d(TAG, "Generation complete, ${fullContent.length} chars")
+                val assistantMsgId = saveAssistantMessage(chatId, fullContent)
+
+                trySend(Result.success(
+                    SendMessageResponse(
+                        isComplete = true,
+                        fullContent = fullContent,
+                        messageId = assistantMsgId.toString()
+                    )
+                ))
+            } catch (e: Exception) {
+                Log.e(TAG, "Generation failed", e)
+                trySend(Result.failure(SendMessageException(e.message ?: "Generation failed")))
+            } finally {
+                close()
             }
         }
     }
@@ -81,3 +146,7 @@ class SendMessageUseCase @Inject constructor(
         return chatRepository.insertMessage(assistantMessage)
     }
 }
+
+class SendMessageException(message: String) : Exception(message)
+
+private const val TAG = "SendMessageUseCase"
