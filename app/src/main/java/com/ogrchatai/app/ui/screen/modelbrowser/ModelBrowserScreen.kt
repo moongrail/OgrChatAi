@@ -3,6 +3,8 @@ package com.ogrchatai.app.ui.screen.modelbrowser
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,7 +25,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.FilterList
-import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -60,11 +61,11 @@ import com.ogrchatai.app.ui.viewmodel.ModelBrowserAction
 import com.ogrchatai.app.ui.viewmodel.ModelBrowserViewModel
 
 private val QUANTIZATION_FILTERS = listOf(
-    "Q4_K_M",
-    "Q5_K_M",
-    "Q8_0",
-    "F16",
-    "F32"
+    "Q4_K_M", "Q5_K_M", "Q8_0", "F16", "F32", "Q4_0", "Q5_0"
+)
+
+private val ARCHITECTURE_FILTERS = listOf(
+    "llama", "mistral", "gemma", "phi", "qwen"
 )
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -96,15 +97,33 @@ fun ModelBrowserScreen(
         }
     }
 
+    LaunchedEffect(Unit) {
+        viewModel.events.collect { event ->
+            when (event) {
+                is com.ogrchatai.app.ui.viewmodel.ModelBrowserEvent.ShowSnackbar -> {}
+                else -> {}
+            }
+        }
+    }
+
     Scaffold(
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
             LargeTopAppBar(
                 title = {
-                    Text(
-                        text = "Model Browser",
-                        fontWeight = FontWeight.Bold
-                    )
+                    Column {
+                        Text(
+                            text = "Model Browser",
+                            fontWeight = FontWeight.Bold
+                        )
+                        if (uiState.deviceRamMb > 0) {
+                            Text(
+                                text = "Device RAM: ${uiState.deviceRamMb} MB",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
                 },
                 navigationIcon = {
                     IconButton(onClick = onBackClick) {
@@ -139,9 +158,9 @@ fun ModelBrowserScreen(
                 query = searchQuery,
                 onQueryChange = { query ->
                     searchQuery = query
+                    viewModel.onAction(ModelBrowserAction.UpdateSearchQuery(query))
                 },
                 onSearch = {
-                    viewModel.onAction(ModelBrowserAction.UpdateSearchQuery(searchQuery))
                     viewModel.onAction(ModelBrowserAction.Search)
                     activeSearch = false
                 },
@@ -151,7 +170,7 @@ fun ModelBrowserScreen(
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp),
                 placeholder = {
-                    Text("Search models...")
+                    Text("Search GGUF models (e.g. TinyLlama, Mistral...)")
                 },
                 leadingIcon = {
                     Icon(
@@ -179,51 +198,123 @@ fun ModelBrowserScreen(
 
             AnimatedVisibility(
                 visible = showFilters,
-                enter = fadeIn(),
-                exit = fadeOut()
+                enter = slideInVertically() + fadeIn(),
+                exit = slideOutVertically() + fadeOut()
             ) {
-                FlowRow(
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                        .padding(horizontal = 16.dp, vertical = 4.dp)
                 ) {
-                    QUANTIZATION_FILTERS.forEach { quant ->
-                        val isSelected = uiState.filters.quantization == quant
-                        FilterChip(
-                            selected = isSelected,
-                            onClick = {
-                                if (isSelected) {
-                                    viewModel.onAction(ModelBrowserAction.ClearFilters)
-                                } else {
-                                    viewModel.onAction(
-                                        ModelBrowserAction.UpdateFilter(
-                                            uiState.filters.copy(quantization = quant)
+                    Text(
+                        text = "Quantization",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    FlowRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        QUANTIZATION_FILTERS.forEach { quant ->
+                            val isSelected = uiState.filters.quantization == quant
+                            FilterChip(
+                                selected = isSelected,
+                                onClick = {
+                                    if (isSelected) {
+                                        viewModel.onAction(ModelBrowserAction.ClearFilters)
+                                    } else {
+                                        viewModel.onAction(
+                                            ModelBrowserAction.UpdateFilter(
+                                                uiState.filters.copy(quantization = quant)
+                                            )
                                         )
+                                    }
+                                },
+                                label = {
+                                    Text(
+                                        text = quant,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
                                     )
-                                }
-                            },
-                            label = {
-                                Text(
-                                    text = quant,
-                                    style = MaterialTheme.typography.labelMedium,
-                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
-                                )
-                            },
-                            colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                                selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
-                            ),
-                            shape = RoundedCornerShape(12.dp)
-                        )
+                                },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                                    selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
+                                ),
+                                shape = RoundedCornerShape(12.dp)
+                            )
+                        }
                     }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Architecture",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    FlowRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        ARCHITECTURE_FILTERS.forEach { arch ->
+                            val isSelected = uiState.filters.architecture == arch
+                            FilterChip(
+                                selected = isSelected,
+                                onClick = {
+                                    if (isSelected) {
+                                        viewModel.onAction(ModelBrowserAction.ClearFilters)
+                                    } else {
+                                        viewModel.onAction(
+                                            ModelBrowserAction.UpdateFilter(
+                                                uiState.filters.copy(architecture = arch)
+                                            )
+                                        )
+                                    }
+                                },
+                                label = {
+                                    Text(
+                                        text = arch,
+                                        style = MaterialTheme.typography.labelSmall
+                                    )
+                                },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                    selectedLabelColor = MaterialTheme.colorScheme.onSecondaryContainer
+                                ),
+                                shape = RoundedCornerShape(12.dp)
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+            }
+
+            if (uiState.searchResults.isNotEmpty()) {
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 4.dp),
+                    shape = RoundedCornerShape(8.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                ) {
+                    Text(
+                        text = "${uiState.searchResults.size} models found",
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
 
             when {
                 uiState.isLoading && uiState.searchResults.isEmpty() -> {
-                    LoadingIndicator(message = "Searching models...")
+                    LoadingIndicator(message = "Searching HuggingFace...")
                 }
                 uiState.error != null && uiState.searchResults.isEmpty() -> {
                     com.ogrchatai.app.ui.components.ErrorView(
@@ -235,9 +326,9 @@ fun ModelBrowserScreen(
                 }
                 uiState.searchResults.isEmpty() -> {
                     EmptyStateView(
-                        icon = Icons.Filled.History,
-                        title = "Search for models",
-                        subtitle = "Find GGUF models from HuggingFace"
+                        icon = Icons.Filled.Search,
+                        title = "Search for GGUF models",
+                        subtitle = "Type at least 2 characters to search HuggingFace.\nOnly GGUF-quantized models run on-device."
                     )
                 }
                 else -> {
@@ -260,9 +351,16 @@ fun ModelBrowserScreen(
                                 ModelCard(
                                     model = model,
                                     downloadState = uiState.downloadState[model.id],
+                                    isDownloaded = model.id in uiState.downloadedModelIds,
+                                    deviceRamMb = uiState.deviceRamMb,
                                     onDownloadClick = {
                                         viewModel.onAction(
                                             ModelBrowserAction.DownloadModel(model.id)
+                                        )
+                                    },
+                                    onCancelDownload = {
+                                        viewModel.onAction(
+                                            ModelBrowserAction.CancelDownload(model.id)
                                         )
                                     },
                                     onModelClick = { onModelClick(model.id) }
