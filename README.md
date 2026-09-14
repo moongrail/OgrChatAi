@@ -2,7 +2,7 @@
 
 # ⚡ OgrChatAi
 
-### ИИ-чат на устройстве — Приватно, Быстро, Бесплатно
+### DRAFT ИИ-чат на устройстве — Приватно, Быстро, Бесплатно
 
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.1.0-7F52FF?style=flat-square&logo=kotlin&logoColor=white)](https://kotlinlang.org)
 [![Compose](https://img.shields.io/badge/Jetpack_Compose-2024.12-4285F4?style=flat-square&logo=jetpackcompose&logoColor=white)](https://developer.android.com/jetpack/compose)
