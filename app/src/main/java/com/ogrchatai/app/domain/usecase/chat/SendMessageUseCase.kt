@@ -27,7 +27,7 @@ class SendMessageUseCase @Inject constructor(
         attachments: List<Attachment> = emptyList(),
         config: GenerationConfig = GenerationConfig.DEFAULT
     ): Flow<Result<SendMessageResponse>> {
-        Log.d(TAG, "invoke called: chatId=$chatId, content='${content.take(20)}', modelId=$modelId")
+        Log.d(TAG, "invoke: chatId=$chatId, modelId=$modelId")
         require(content.isNotBlank() || attachments.isNotEmpty()) { "Message content cannot be blank" }
 
         val userMessage = ChatMessage(
@@ -36,34 +36,32 @@ class SendMessageUseCase @Inject constructor(
             content = content,
             attachments = attachments
         )
-        Log.d(TAG, "About to insertMessage")
         chatRepository.insertMessage(userMessage)
-        Log.d(TAG, "insertMessage done, getting chat")
 
         val chat = chatRepository.getChatById(chatId).firstOrNull()
         if (chat == null) {
-            Log.e(TAG, "Chat not found for chatId=$chatId")
             return kotlinx.coroutines.flow.flow {
                 emit(Result.failure(SendMessageException("Chat not found")))
             }
         }
-        Log.d(TAG, "Chat found: id=${chat.id}, modelId='${chat.modelId}'")
 
         val messages = chatRepository.getMessages(chatId).firstOrNull().orEmpty()
         val chatHistory = messages.map { "${it.role.name}: ${it.content}" }
 
         val usedModelId = modelId ?: chat.modelId
-        Log.d(TAG, "usedModelId='$usedModelId'")
         val modelPath = modelRepository.getModelPath(usedModelId)
         if (modelPath == null) {
-            Log.e(TAG, "Model path not found for modelId='$usedModelId'")
             return kotlinx.coroutines.flow.flow {
                 emit(Result.failure(SendMessageException("Model not found: $usedModelId. Please download it first.")))
             }
         }
-        Log.d(TAG, "Model path: $modelPath")
 
-        val prompt = buildPrompt(chatHistory, config.systemPrompt)
+        val modelSettings = modelRepository.getModelSettingsOnce(usedModelId)
+        val effectiveSystemPrompt = modelSettings.systemPrompt.ifBlank {
+            config.systemPrompt.ifBlank { com.ogrchatai.app.domain.model.GenerationConfig.DEFAULT_SYSTEM_PROMPT }
+        }
+
+        val prompt = buildPrompt(chatHistory, effectiveSystemPrompt)
 
         val genConfig = InferenceEngine.GenerationConfig(
             maxTokens = config.maxTokens,
@@ -76,21 +74,18 @@ class SendMessageUseCase @Inject constructor(
 
         return callbackFlow {
             try {
-                Log.d(TAG, "Loading model: $usedModelId from $modelPath")
                 val loadResult = inferenceEngine.loadModel(usedModelId, modelPath)
                 if (loadResult.isFailure) {
-                    Log.e(TAG, "Model load failed: ${loadResult.exceptionOrNull()?.message}")
                     trySend(Result.failure(SendMessageException(
                         "Failed to load model: ${loadResult.exceptionOrNull()?.message}"
                     )))
                     close()
                     return@callbackFlow
                 }
-                Log.d(TAG, "Model loaded successfully, starting generation")
 
                 trySend(Result.success(SendMessageResponse(token = "")))
 
-                val stream = inferenceEngine.generateTextStream(usedModelId, prompt, genConfig)
+                val stream = inferenceEngine.generateTextStream(usedModelId, prompt, effectiveSystemPrompt, genConfig)
                 val sb = StringBuilder()
 
                 stream.collect { token ->
@@ -104,7 +99,6 @@ class SendMessageUseCase @Inject constructor(
                 }
 
                 val fullContent = sb.toString()
-                Log.d(TAG, "Generation complete, ${fullContent.length} chars")
                 val assistantMsgId = saveAssistantMessage(chatId, fullContent)
 
                 trySend(Result.success(
@@ -125,16 +119,10 @@ class SendMessageUseCase @Inject constructor(
 
     private fun buildPrompt(chatHistory: List<String>, systemPrompt: String): String {
         val sb = StringBuilder()
-        if (systemPrompt.isNotBlank()) {
-            sb.appendLine("[INST] <<SYS>>")
-            sb.appendLine(systemPrompt)
-            sb.appendLine("<</SYS>>")
-            sb.appendLine()
-        }
         chatHistory.forEachIndexed { _, message ->
             sb.appendLine(message)
         }
-        return sb.toString()
+        return sb.toString().trim()
     }
 
     suspend fun saveAssistantMessage(chatId: Long, content: String): Long {

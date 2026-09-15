@@ -4,6 +4,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import com.ogrchatai.app.ui.screen.modelbrowser.ModelSettingsSheet
 import com.ogrchatai.app.ui.viewmodel.ChatsAction
 import com.ogrchatai.app.ui.viewmodel.ChatsEvent
 import com.ogrchatai.app.ui.viewmodel.ChatsViewModel
@@ -51,7 +52,19 @@ fun ChatsScreenWrapper(
         ModelPickerDialog(
             models = uiState.downloadedModels,
             onSelect = { modelId -> viewModel.onAction(ChatsAction.SelectModel(modelId)) },
+            onToggleEnabled = { modelId -> viewModel.onAction(ChatsAction.ToggleModelEnabled(modelId)) },
+            onModelSettingsClick = { modelId -> viewModel.onAction(ChatsAction.OpenModelSettings(modelId)) },
             onDismiss = { viewModel.onAction(ChatsAction.DismissModelPicker(false)) }
+        )
+    }
+
+    if (uiState.showModelSettings && uiState.modelSettingsForEdit != null) {
+        ModelSettingsSheet(
+            modelId = uiState.selectedModelIdForSettings,
+            modelName = uiState.selectedModelNameForSettings,
+            settings = uiState.modelSettingsForEdit!!,
+            onSave = { settings -> viewModel.onAction(ChatsAction.SaveModelSettings(settings)) },
+            onDismiss = { viewModel.onAction(ChatsAction.DismissModelSettings) }
         )
     }
 }

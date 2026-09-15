@@ -69,7 +69,6 @@ class ChatRepositoryImpl @Inject constructor(
     }
 
     override suspend fun insertMessage(message: ChatMessage): Long {
-        android.util.Log.d("ChatRepo", "insertMessage: chatId=${message.chatId}, role=${message.role}")
         val encrypted = try {
             withContext(Dispatchers.IO) {
                 withTimeoutOrNull(3000L) {
@@ -77,17 +76,13 @@ class ChatRepositoryImpl @Inject constructor(
                 }
             }
         } catch (e: Exception) {
-            android.util.Log.e("ChatRepo", "encrypt failed: ${e.message}")
             null
         }
-        android.util.Log.d("ChatRepo", "encrypt done, encrypted=${encrypted != null}")
         val entity = message.toEntity().copy(
             encryptedContent = encrypted?.ciphertext,
             contentNonce = encrypted?.nonce
         )
-        val id = chatDao.insertMessage(entity)
-        android.util.Log.d("ChatRepo", "insertMessage done, id=$id")
-        return id
+        return chatDao.insertMessage(entity)
     }
 
     override suspend fun updateMessage(message: ChatMessage) {
@@ -143,7 +138,6 @@ class ChatRepositoryImpl @Inject constructor(
                     nonce = entity.contentNonce!!
                 ))
             } catch (e: Exception) {
-                android.util.Log.e("ChatRepo", "decrypt failed: ${e.message}")
                 entity.content
             }
         } else {

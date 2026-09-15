@@ -25,4 +25,5 @@ interface ModelRepository {
     fun getModelSettings(modelId: String): Flow<ModelSettings>
     suspend fun getModelSettingsOnce(modelId: String): ModelSettings
     suspend fun saveModelSettings(settings: ModelSettings)
+    suspend fun setModelEnabled(modelId: String, enabled: Boolean)
 }

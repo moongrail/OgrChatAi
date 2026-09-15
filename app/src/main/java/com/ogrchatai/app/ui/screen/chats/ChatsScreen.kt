@@ -29,6 +29,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Settings as SettingsIcon
 import androidx.compose.material.icons.filled.Shop
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -40,6 +41,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -71,7 +73,7 @@ fun ChatsScreen(
     onModelBrowserClick: () -> Unit,
     onSettingsClick: () -> Unit,
     onFilterChange: (ChatFilter) -> Unit,
-    downloadedModels: List<Pair<String, String>> = emptyList(),
+    downloadedModels: List<Triple<String, String, Boolean>> = emptyList(),
     onModelSelected: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
@@ -258,8 +260,10 @@ fun ChatsScreen(
 
 @Composable
 fun ModelPickerDialog(
-    models: List<Pair<String, String>>,
+    models: List<Triple<String, String, Boolean>>,
     onSelect: (String) -> Unit,
+    onToggleEnabled: (String) -> Unit,
+    onModelSettingsClick: (String) -> Unit = {},
     onDismiss: () -> Unit
 ) {
     AlertDialog(
@@ -280,14 +284,20 @@ fun ModelPickerDialog(
                 Column(
                     verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    models.forEach { (modelId, modelName) ->
+                    models.forEach { (modelId, modelName, isEnabled) ->
                         Surface(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(8.dp))
-                                .clickable { onSelect(modelId) },
+                                .then(
+                                    if (isEnabled) Modifier.clickable { onSelect(modelId) }
+                                    else Modifier
+                                ),
                             shape = RoundedCornerShape(8.dp),
-                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                            color = if (isEnabled)
+                                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                            else
+                                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.1f)
                         ) {
                             Row(
                                 modifier = Modifier.padding(12.dp),
@@ -297,13 +307,32 @@ fun ModelPickerDialog(
                                     Icons.Filled.History,
                                     contentDescription = null,
                                     modifier = Modifier.size(20.dp),
-                                    tint = MaterialTheme.colorScheme.primary
+                                    tint = if (isEnabled) MaterialTheme.colorScheme.primary
+                                    else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
                                 )
                                 Spacer(modifier = Modifier.width(12.dp))
                                 Text(
                                     text = modelName,
                                     style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurface
+                                    color = if (isEnabled) MaterialTheme.colorScheme.onSurface
+                                    else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                                    modifier = Modifier.weight(1f)
+                                )
+                                IconButton(
+                                    onClick = { onModelSettingsClick(modelId) },
+                                    modifier = Modifier.size(32.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Default.Settings,
+                                        contentDescription = "Model Settings",
+                                        modifier = Modifier.size(18.dp),
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                    )
+                                }
+                                Switch(
+                                    checked = isEnabled,
+                                    onCheckedChange = { onToggleEnabled(modelId) },
+                                    modifier = Modifier.size(36.dp)
                                 )
                             }
                         }

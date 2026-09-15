@@ -26,8 +26,12 @@ data class ChatsUiState(
     val isLoading: Boolean = false,
     val error: String? = null,
     val showModelPicker: Boolean = false,
-    val downloadedModels: List<Pair<String, String>> = emptyList(),
-    val activeFilter: ChatFilter = ChatFilter.ALL
+    val downloadedModels: List<Triple<String, String, Boolean>> = emptyList(),
+    val activeFilter: ChatFilter = ChatFilter.ALL,
+    val showModelSettings: Boolean = false,
+    val selectedModelIdForSettings: String = "",
+    val selectedModelNameForSettings: String = "",
+    val modelSettingsForEdit: com.ogrchatai.app.domain.model.ModelSettings? = null
 )
 
 enum class ChatFilter(val label: String) {
@@ -46,6 +50,10 @@ sealed interface ChatsAction {
     data class SelectModel(val modelId: String) : ChatsAction
     data class DismissModelPicker(val createWithSelected: Boolean) : ChatsAction
     data class FilterChats(val filter: ChatFilter) : ChatsAction
+    data class ToggleModelEnabled(val modelId: String) : ChatsAction
+    data class OpenModelSettings(val modelId: String) : ChatsAction
+    data object DismissModelSettings : ChatsAction
+    data class SaveModelSettings(val settings: com.ogrchatai.app.domain.model.ModelSettings) : ChatsAction
 }
 
 @HiltViewModel
@@ -117,7 +125,7 @@ class ChatsViewModel @Inject constructor(
             modelRepository.getDownloadedModels().collect { models ->
                 _uiState.update {
                     it.copy(
-                        downloadedModels = models.map { m -> m.id to m.name }
+                        downloadedModels = models.map { m -> Triple(m.id, m.name, m.isEnabled) }
                     )
                 }
             }
@@ -131,6 +139,12 @@ class ChatsViewModel @Inject constructor(
             is ChatsAction.SelectModel -> selectModel(action.modelId)
             is ChatsAction.DismissModelPicker -> dismissModelPicker(action.createWithSelected)
             is ChatsAction.FilterChats -> _uiState.update { it.copy(activeFilter = action.filter) }
+            is ChatsAction.ToggleModelEnabled -> toggleModelEnabled(action.modelId)
+            is ChatsAction.OpenModelSettings -> openModelSettings(action.modelId)
+            is ChatsAction.DismissModelSettings -> _uiState.update {
+                it.copy(showModelSettings = false, selectedModelIdForSettings = "", modelSettingsForEdit = null)
+            }
+            is ChatsAction.SaveModelSettings -> saveModelSettings(action.settings)
         }
     }
 
@@ -184,6 +198,43 @@ class ChatsViewModel @Inject constructor(
         viewModelScope.launch {
             val id = chatId.toLongOrNull() ?: return@launch
             deleteChatUseCase(id)
+        }
+    }
+
+    private fun toggleModelEnabled(modelId: String) {
+        viewModelScope.launch {
+            val currentModels = _uiState.value.downloadedModels
+            val model = currentModels.find { it.first == modelId } ?: return@launch
+            val newEnabled = !model.third
+            modelRepository.setModelEnabled(modelId, newEnabled)
+        }
+    }
+
+    private fun openModelSettings(modelId: String) {
+        viewModelScope.launch {
+            val model = _uiState.value.downloadedModels.find { it.first == modelId }
+            val settings = modelRepository.getModelSettingsOnce(modelId)
+            _uiState.update {
+                it.copy(
+                    showModelSettings = true,
+                    selectedModelIdForSettings = modelId,
+                    selectedModelNameForSettings = model?.second ?: modelId.substringAfter('/'),
+                    modelSettingsForEdit = settings
+                )
+            }
+        }
+    }
+
+    private fun saveModelSettings(settings: com.ogrchatai.app.domain.model.ModelSettings) {
+        viewModelScope.launch {
+            modelRepository.saveModelSettings(settings)
+            _uiState.update {
+                it.copy(
+                    showModelSettings = false,
+                    selectedModelIdForSettings = "",
+                    modelSettingsForEdit = null
+                )
+            }
         }
     }
 

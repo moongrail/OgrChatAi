@@ -199,6 +199,11 @@ class ModelRepositoryImpl @Inject constructor(
         userPreferences.saveModelSettings(settings)
     }
 
+    override suspend fun setModelEnabled(modelId: String, enabled: Boolean) {
+        val entity = modelDao.getModelByHfIdOnce(modelId) ?: return
+        modelDao.setModelEnabled(entity.id, enabled)
+    }
+
     private fun DownloadedModelEntity.toDomain(): DownloadedModel {
         val file = File(filePath)
         return DownloadedModel(
@@ -208,7 +213,8 @@ class ModelRepositoryImpl @Inject constructor(
             fileName = fileName,
             fileSize = sizeBytes,
             quantization = quantization,
-            file = if (file.exists()) file else null
+            file = if (file.exists()) file else null,
+            isEnabled = isEnabled
         )
     }
 }

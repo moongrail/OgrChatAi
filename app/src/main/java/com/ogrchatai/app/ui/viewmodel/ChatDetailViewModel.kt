@@ -109,8 +109,6 @@ class ChatDetailViewModel @Inject constructor(
         if (content.isEmpty() && state.attachments.isEmpty()) return
         if (state.isGenerating) return
 
-        android.util.Log.d("ChatDetailVM", "sendMessage: chatId=$chatId, content='${content.take(20)}'")
-
         val userMessage = Message(
             id = "msg_${System.currentTimeMillis()}",
             chatId = chatId.toString(),
@@ -136,7 +134,6 @@ class ChatDetailViewModel @Inject constructor(
             try {
                 sendMessageUseCase(chatId, content, null, state.attachments)
                     .collect { result ->
-                        android.util.Log.d("ChatDetailVM", "Flow result: success=${result.isSuccess}, isStreaming=${result.getOrNull()?.isStreaming}, isComplete=${result.getOrNull()?.isComplete}, error=${result.exceptionOrNull()?.message}")
                         result.onSuccess { response ->
                             when {
                                 response.isStreaming -> {

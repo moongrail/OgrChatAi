@@ -10,7 +10,8 @@ data class DownloadedModel(
     val fileSize: Long,
     val quantization: String = "",
     val downloadedAt: Long = System.currentTimeMillis(),
-    val file: File? = null
+    val file: File? = null,
+    val isEnabled: Boolean = true
 ) {
     val formattedSize: String
         get() {

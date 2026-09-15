@@ -2,7 +2,8 @@ package com.ogrchatai.app.data.ml
 
 import android.content.Context
 import android.util.Log
-import com.its_hazratbilal.aikit.core.AiKitEngine
+import com.hazratbilal.aikit.core.AiKitEngine
+import com.hazratbilal.aikit.chat.chat
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
@@ -24,7 +25,7 @@ class InferenceEngine @Inject constructor(
 ) {
 
     private var aiKitEngine: AiKitEngine? = null
-    private var aiKitChat: com.its_hazratbilal.aikit.chat.AiKitChat? = null
+    private var aiKitChat: com.hazratbilal.aikit.chat.AiKitChat? = null
     private val isGenerating = AtomicBoolean(false)
     private val loadMutex = Mutex()
     private var currentModelId: String? = null
@@ -143,6 +144,7 @@ class InferenceEngine @Inject constructor(
     fun generateTextStream(
         modelId: String,
         prompt: String,
+        systemPrompt: String = "You are a helpful assistant.",
         config: GenerationConfig = GenerationConfig()
     ): Flow<StreamToken> = callbackFlow {
         val chat = aiKitChat
@@ -163,45 +165,66 @@ class InferenceEngine @Inject constructor(
         }
 
         var tokenCount = 0
+        var insideThinkTag = false
+        val thinkBuffer = StringBuilder()
 
         try {
-            chat.sendMessage(prompt, object : com.its_hazratbilal.aikit.chat.AiKitChat.ChatListener {
-                override fun onGenerationStarted() {
-                    Log.d(TAG, "Generation started")
-                }
+            chat.sendMessage(
+                prompt,
+                config.maxTokens,
+                systemPrompt.ifBlank { "You are a helpful assistant." },
+                object : com.hazratbilal.aikit.chat.AiKitChat.ChatListener {
+                    override fun onGenerationStarted() {
+                        Log.d(TAG, "Generation started")
+                    }
 
-                override fun onToken(token: String) {
-                    tokenCount++
-                    trySend(
-                        StreamToken(
-                            text = token,
-                            tokenId = tokenCount,
-                            probability = 1.0f
+                    override fun onToken(token: String) {
+                        tokenCount++
+
+                        if (token.contains("<think>")) {
+                            insideThinkTag = true
+                        }
+
+                        if (insideThinkTag) {
+                            thinkBuffer.append(token)
+                            if (token.contains("</think>")) {
+                                insideThinkTag = false
+                                thinkBuffer.clear()
+                            }
+                            return
+                        }
+
+                        trySend(
+                            StreamToken(
+                                text = token,
+                                tokenId = tokenCount,
+                                probability = 1.0f
+                            )
                         )
-                    )
-                }
+                    }
 
-                override fun onGenerationComplete(fullResponse: String) {
-                    Log.d(TAG, "Generation complete: ${fullResponse.length} chars, $tokenCount tokens")
-                    isGenerating.set(false)
-                    loadedModels[modelId]?.isInUse = false
-                    close()
-                }
+                    override fun onGenerationComplete(fullResponse: String) {
+                        Log.d(TAG, "Generation complete: ${fullResponse.length} chars, $tokenCount tokens")
+                        isGenerating.set(false)
+                        loadedModels[modelId]?.isInUse = false
+                        close()
+                    }
 
-                override fun onGenerationError(error: Throwable) {
-                    Log.e(TAG, "Generation error", error)
-                    isGenerating.set(false)
-                    loadedModels[modelId]?.isInUse = false
-                    close(error)
-                }
+                    override fun onGenerationError(error: Throwable) {
+                        Log.e(TAG, "Generation error", error)
+                        isGenerating.set(false)
+                        loadedModels[modelId]?.isInUse = false
+                        close(error)
+                    }
 
-                override fun onCancelled() {
-                    Log.d(TAG, "Generation cancelled")
-                    isGenerating.set(false)
-                    loadedModels[modelId]?.isInUse = false
-                    close()
+                    override fun onCancelled() {
+                        Log.d(TAG, "Generation cancelled")
+                        isGenerating.set(false)
+                        loadedModels[modelId]?.isInUse = false
+                        close()
+                    }
                 }
-            })
+            )
         } catch (e: Exception) {
             Log.e(TAG, "Failed to start generation", e)
             isGenerating.set(false)

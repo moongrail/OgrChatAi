@@ -44,6 +44,9 @@ interface ModelDao {
     @Query("UPDATE downloaded_models SET is_favorite = :isFavorite WHERE id = :modelId")
     suspend fun setFavorite(modelId: Long, isFavorite: Boolean)
 
+    @Query("UPDATE downloaded_models SET is_enabled = :isEnabled WHERE id = :modelId")
+    suspend fun setModelEnabled(modelId: Long, isEnabled: Boolean)
+
     @Query("SELECT * FROM downloaded_models WHERE name LIKE '%' || :query || '%' OR hf_model_id LIKE '%' || :query || '%'")
     fun searchModels(query: String): Flow<List<DownloadedModelEntity>>
 

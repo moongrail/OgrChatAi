@@ -29,5 +29,8 @@ data class DownloadedModelEntity(
     val downloadedAt: Long = System.currentTimeMillis(),
 
     @ColumnInfo(name = "is_favorite")
-    val isFavorite: Boolean = false
+    val isFavorite: Boolean = false,
+
+    @ColumnInfo(name = "is_enabled", defaultValue = "1")
+    val isEnabled: Boolean = true
 )

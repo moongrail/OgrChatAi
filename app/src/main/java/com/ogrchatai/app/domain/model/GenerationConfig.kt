@@ -14,7 +14,9 @@ data class GenerationConfig(
     val systemPrompt: String = ""
 ) {
     companion object {
-        val DEFAULT = GenerationConfig()
+        const val DEFAULT_SYSTEM_PROMPT = "You are a helpful assistant. Always respond in the same language the user writes in. Be concise, accurate, and natural."
+
+        val DEFAULT = GenerationConfig(systemPrompt = DEFAULT_SYSTEM_PROMPT)
 
         val CREATIVE = GenerationConfig(
             temperature = 1.2f,
