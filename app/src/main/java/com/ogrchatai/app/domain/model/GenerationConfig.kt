@@ -14,7 +14,7 @@ data class GenerationConfig(
     val systemPrompt: String = ""
 ) {
     companion object {
-        const val DEFAULT_SYSTEM_PROMPT = "You are a helpful assistant. Always respond in the same language the user writes in. Be concise, accurate, and natural."
+        const val DEFAULT_SYSTEM_PROMPT = "You are a helpful multilingual assistant. IMPORTANT: You MUST respond in the exact same language the user writes in. If the user writes in Russian, respond in Russian. If in English, respond in English. If in any other language, respond in that same language. Never switch languages. Be concise, natural, and helpful. Do not include any thinking or reasoning tags in your response."
 
         val DEFAULT = GenerationConfig(systemPrompt = DEFAULT_SYSTEM_PROMPT)
 

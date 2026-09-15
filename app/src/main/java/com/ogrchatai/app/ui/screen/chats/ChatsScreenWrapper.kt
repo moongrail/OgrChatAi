@@ -45,18 +45,11 @@ fun ChatsScreenWrapper(
         onModelBrowserClick = onModelBrowserClick,
         onSettingsClick = onSettingsClick,
         onFilterChange = { filter -> viewModel.onAction(ChatsAction.FilterChats(filter)) },
-        downloadedModels = uiState.downloadedModels
+        downloadedModels = uiState.downloadedModels,
+        onModelSelected = { modelId -> viewModel.onAction(ChatsAction.SelectModel(modelId)) },
+        onModelToggled = { modelId -> viewModel.onAction(ChatsAction.ToggleModelEnabled(modelId)) },
+        onModelSettingsClick = { modelId -> viewModel.onAction(ChatsAction.OpenModelSettings(modelId)) }
     )
-
-    if (uiState.showModelPicker) {
-        ModelPickerDialog(
-            models = uiState.downloadedModels,
-            onSelect = { modelId -> viewModel.onAction(ChatsAction.SelectModel(modelId)) },
-            onToggleEnabled = { modelId -> viewModel.onAction(ChatsAction.ToggleModelEnabled(modelId)) },
-            onModelSettingsClick = { modelId -> viewModel.onAction(ChatsAction.OpenModelSettings(modelId)) },
-            onDismiss = { viewModel.onAction(ChatsAction.DismissModelPicker(false)) }
-        )
-    }
 
     if (uiState.showModelSettings && uiState.modelSettingsForEdit != null) {
         ModelSettingsSheet(
