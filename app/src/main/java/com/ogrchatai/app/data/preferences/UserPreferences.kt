@@ -11,6 +11,7 @@ import androidx.datastore.preferences.core.doublePreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.google.gson.Gson
 import com.ogrchatai.app.domain.model.ModelSettings
+import com.ogrchatai.app.domain.model.VoiceGender
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -68,6 +69,10 @@ class UserPreferences @Inject constructor(
 
     val streamingEnabled: Flow<Boolean> = dataStore.data.map { preferences ->
         preferences[STREAMING_ENABLED_KEY] ?: true
+    }
+
+    val voiceGender: Flow<VoiceGender> = dataStore.data.map { preferences ->
+        VoiceGender.fromStorage(preferences[VOICE_GENDER_KEY])
     }
 
     fun getModelSettings(modelId: String): Flow<ModelSettings> {
@@ -156,6 +161,12 @@ class UserPreferences @Inject constructor(
         }
     }
 
+    suspend fun setVoiceGender(gender: VoiceGender) {
+        dataStore.edit { preferences ->
+            preferences[VOICE_GENDER_KEY] = gender.storageValue
+        }
+    }
+
     enum class ThemeMode {
         SYSTEM, LIGHT, DARK
     }
@@ -170,5 +181,6 @@ class UserPreferences @Inject constructor(
         private val MAX_TOKENS_KEY = intPreferencesKey("max_tokens")
         private val TOP_P_KEY = doublePreferencesKey("top_p_raw")
         private val STREAMING_ENABLED_KEY = booleanPreferencesKey("streaming_enabled")
+        private val VOICE_GENDER_KEY = stringPreferencesKey("voice_gender")
     }
 }

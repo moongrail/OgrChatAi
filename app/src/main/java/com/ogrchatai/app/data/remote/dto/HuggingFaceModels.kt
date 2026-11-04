@@ -12,6 +12,7 @@ data class HuggingFaceModel(
     val sha: String = "",
     val lastModified: String = "",
     val tags: List<String> = emptyList(),
+    @SerializedName("pipeline_tag")
     val pipelineTag: String? = null,
     val siblings: List<HuggingFaceModelFile> = emptyList(),
     val cardData: HuggingFaceCardData? = null,
@@ -58,6 +59,7 @@ data class HuggingFaceModelInfoResponse(
     val modelId: String = "",
     val author: String = "",
     val tags: List<String> = emptyList(),
+    @SerializedName("pipeline_tag")
     val pipelineTag: String? = null,
     val siblings: List<HuggingFaceModelFile> = emptyList(),
     val downloads: Int = 0,

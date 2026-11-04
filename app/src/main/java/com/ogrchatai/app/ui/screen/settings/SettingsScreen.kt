@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material.icons.filled.SdStorage
 import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.filled.Straighten
@@ -44,6 +45,7 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -60,6 +62,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.ogrchatai.app.domain.model.Language
 import com.ogrchatai.app.domain.model.ThemeMode
+import com.ogrchatai.app.domain.model.VoiceGender
 import com.ogrchatai.app.ui.components.ConfirmDialog
 import com.ogrchatai.app.ui.components.LoadingIndicator
 import com.ogrchatai.app.ui.components.SectionHeader
@@ -72,6 +75,7 @@ import kotlin.math.roundToInt
 @Composable
 fun SettingsScreen(
     onBackClick: () -> Unit,
+    onDownloadedModelsClick: () -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -216,6 +220,76 @@ fun SettingsScreen(
                                     color = MaterialTheme.colorScheme.onSurface
                                 )
                             }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                SectionHeader(title = "Voice")
+
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.surface,
+                    shadowElevation = 1.dp
+                ) {
+                    Column(modifier = Modifier.padding(vertical = 8.dp)) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.RecordVoiceOver,
+                                contentDescription = null,
+                                modifier = Modifier.size(20.dp),
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Assistant voice",
+                                style = MaterialTheme.typography.bodyLarge,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+
+                        VoiceGender.entries.forEach { gender ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 2.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                RadioButton(
+                                    selected = uiState.voiceGender == gender,
+                                    onClick = {
+                                        viewModel.onAction(SettingsAction.UpdateVoiceGender(gender))
+                                    },
+                                    colors = RadioButtonDefaults.colors(
+                                        selectedColor = MaterialTheme.colorScheme.primary
+                                    )
+                                )
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Text(
+                                    text = when (gender) {
+                                        VoiceGender.FEMALE -> "Female"
+                                        VoiceGender.MALE -> "Male"
+                                    },
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                        }
+
+                        TextButton(
+                            onClick = { viewModel.onAction(SettingsAction.TestVoice) },
+                            modifier = Modifier.padding(horizontal = 8.dp)
+                        ) {
+                            Text("Test voice")
                         }
                     }
                 }
@@ -375,7 +449,7 @@ fun SettingsScreen(
                         icon = Icons.Filled.SdStorage,
                         title = "Downloaded Models",
                         subtitle = "Manage your downloaded models",
-                        onClick = { /* TODO: Navigate to downloaded models screen */ }
+                        onClick = onDownloadedModelsClick
                     )
                 }
 

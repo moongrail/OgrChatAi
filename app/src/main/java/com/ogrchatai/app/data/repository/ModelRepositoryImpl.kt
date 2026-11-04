@@ -16,9 +16,8 @@ import dagger.Lazy
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -50,7 +49,10 @@ class ModelRepositoryImpl @Inject constructor(
                 val response = apiClient.api.searchModels(
                     query = query,
                     sort = "downloads",
-                    limit = 50,
+                    // HuggingFace caps this at 100. Fetching the larger page is important:
+                    // the most-downloaded entries are often 7B-100B models, and a 4 GB phone
+                    // needs the extra rows to still find a few small, usable models.
+                    limit = 100,
                     filter = "gguf"
                 )
                 response.map { dto ->
@@ -159,15 +161,16 @@ class ModelRepositoryImpl @Inject constructor(
     }
 
     override fun getGenerationConfig(): Flow<GenerationConfig> {
-        return flow {
-            val temp = userPreferences.temperature.first()
-            val topP = userPreferences.topP.first()
-            val maxTokens = userPreferences.maxTokens.first()
-            emit(GenerationConfig(
-                temperature = temp,
+        return combine(
+            userPreferences.temperature,
+            userPreferences.topP,
+            userPreferences.maxTokens
+        ) { temperature, topP, maxTokens ->
+            GenerationConfig(
+                temperature = temperature,
                 topP = topP,
                 maxTokens = maxTokens
-            ))
+            )
         }
     }
 

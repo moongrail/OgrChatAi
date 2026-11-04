@@ -18,8 +18,9 @@ class GetSettingsUseCase @Inject constructor(
         return combine(
             userPreferences.language,
             userPreferences.themeMode,
-            modelRepository.getGenerationConfig()
-        ) { langCode, themeMode, genConfig ->
+            modelRepository.getGenerationConfig(),
+            userPreferences.voiceGender
+        ) { langCode, themeMode, genConfig, voiceGender ->
             AppSettings(
                 language = Language.fromCode(langCode),
                 theme = when (themeMode) {
@@ -27,7 +28,8 @@ class GetSettingsUseCase @Inject constructor(
                     UserPreferences.ThemeMode.DARK -> ThemeMode.DARK
                     UserPreferences.ThemeMode.SYSTEM -> ThemeMode.SYSTEM
                 },
-                generationConfig = genConfig
+                generationConfig = genConfig,
+                voiceGender = voiceGender
             )
         }
     }

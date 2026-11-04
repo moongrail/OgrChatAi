@@ -23,6 +23,14 @@
     <string name="chat_send">Send</string>
     <string name="chat_stop">Stop</string>
     <string name="chat_attach">Attach file</string>
+    <string name="chat_attach_title">Attach</string>
+    <string name="chat_attach_photo">Photo</string>
+    <string name="chat_attach_document">Document</string>
+    <string name="chat_voice_input">Voice input</string>
+    <string name="chat_voice_stop">Stop voice input</string>
+    <string name="chat_voice_listening">Listening…</string>
+    <string name="chat_voice_processing">Recognizing…</string>
+    <string name="chat_attachment_processing">Processing attachment…</string>
     <string name="chat_generating">Generating…</string>
     <string name="chat_empty_conversation">Start a conversation</string>
     <string name="chat_empty_conversation_subtitle">Send a message to begin chatting with the AI</string>
@@ -65,6 +73,17 @@
     <!-- Common -->
     <string name="error_network">Network error. Please check your connection.</string>
     <string name="error_unknown">An unexpected error occurred.</string>
+
+    <!-- Voice input -->
+    <string name="voice_error_unavailable">Speech recognition is not available on this device.</string>
+    <string name="voice_error_permission">Microphone permission is required for voice input.</string>
+    <string name="voice_error_no_match">No speech was recognized. Please try again.</string>
+    <string name="voice_error_no_speech">No speech detected. Please try again.</string>
+    <string name="voice_error_network">Speech recognition needs a network connection or an offline language pack.</string>
+    <string name="voice_error_busy">Speech recognition is busy. Please try again.</string>
+    <string name="voice_error_audio">Could not access the microphone. Please try again.</string>
+    <string name="voice_error_language">The selected speech language is not supported on this device.</string>
+    <string name="voice_error_generic">Voice input failed. Please try again.</string>
     <string name="retry">Retry</string>
     <string name="ok">OK</string>
     <string name="yes">Yes</string>

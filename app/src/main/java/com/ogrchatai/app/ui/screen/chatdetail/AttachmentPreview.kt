@@ -81,13 +81,20 @@ private fun AttachmentChip(
                 )
             }
 
-            Text(
-                text = attachment.fileName,
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSecondaryContainer,
-                maxLines = 1,
-                modifier = Modifier.widthIn(max = 100.dp)
-            )
+            Column(modifier = Modifier.widthIn(max = 120.dp)) {
+                Text(
+                    text = attachment.fileName,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                    maxLines = 1
+                )
+                Text(
+                    text = attachment.formattedSize,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.6f),
+                    maxLines = 1
+                )
+            }
 
             IconButton(
                 onClick = onRemove,

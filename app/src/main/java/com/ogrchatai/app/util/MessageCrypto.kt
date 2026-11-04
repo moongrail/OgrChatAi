@@ -26,15 +26,15 @@ object MessageCrypto {
     fun encrypt(context: Context, plaintext: String): EncryptedResult {
         val key = getOrCreateKey(context)
         val cipher = Cipher.getInstance(AES_GCM_NOPADDING)
-        
-        val nonce = generateNonce()
-        val gcmSpec = GCMParameterSpec(GCM_TAG_LENGTH, nonce)
-        
-        cipher.init(Cipher.ENCRYPT_MODE, key, gcmSpec)
-        
+
+        // Android Keystore generates the GCM nonce itself. Supplying a caller nonce is
+        // rejected unless randomized encryption is explicitly disabled.
+        cipher.init(Cipher.ENCRYPT_MODE, key)
+        val nonce = cipher.iv
+
         val plaintextBytes = plaintext.toByteArray(StandardCharsets.UTF_8)
         val ciphertext = cipher.doFinal(plaintextBytes)
-        
+
         return EncryptedResult(
             ciphertext = Base64.encodeToString(ciphertext, Base64.NO_WRAP),
             nonce = Base64.encodeToString(nonce, Base64.NO_WRAP)

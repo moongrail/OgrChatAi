@@ -153,7 +153,8 @@ class ModelBrowserViewModel @Inject constructor(
             searchModelsUseCase(
                 query = query,
                 page = 1,
-                filters = state.filters
+                filters = state.filters,
+                deviceRamMb = state.deviceRamMb
             )
                 .onSuccess { result ->
                     _uiState.update {
@@ -189,7 +190,8 @@ class ModelBrowserViewModel @Inject constructor(
             searchModelsUseCase(
                 query = state.searchQuery,
                 page = nextPage,
-                filters = state.filters
+                filters = state.filters,
+                deviceRamMb = state.deviceRamMb
             )
                 .onSuccess { result ->
                     _uiState.update {

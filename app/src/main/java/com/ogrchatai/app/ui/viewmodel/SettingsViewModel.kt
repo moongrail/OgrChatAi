@@ -6,8 +6,10 @@ import com.ogrchatai.app.domain.model.AppSettings
 import com.ogrchatai.app.domain.model.GenerationConfig
 import com.ogrchatai.app.domain.model.Language
 import com.ogrchatai.app.domain.model.ThemeMode
+import com.ogrchatai.app.domain.model.VoiceGender
 import com.ogrchatai.app.domain.usecase.settings.GetSettingsUseCase
 import com.ogrchatai.app.domain.usecase.settings.UpdateSettingsUseCase
+import com.ogrchatai.app.util.TextToSpeechManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -20,12 +22,14 @@ import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.util.Locale
 import javax.inject.Inject
 
 data class SettingsUiState(
     val language: Language = Language.ENGLISH,
     val theme: ThemeMode = ThemeMode.SYSTEM,
     val generationConfig: GenerationConfig = GenerationConfig(),
+    val voiceGender: VoiceGender = VoiceGender.FEMALE,
     val isLoading: Boolean = false,
     val error: String? = null
 )
@@ -42,6 +46,8 @@ sealed interface SettingsAction {
     data class UpdateTemperature(val temperature: Float) : SettingsAction
     data class UpdateTopP(val topP: Float) : SettingsAction
     data class UpdateMaxTokens(val maxTokens: Int) : SettingsAction
+    data class UpdateVoiceGender(val gender: VoiceGender) : SettingsAction
+    data object TestVoice : SettingsAction
     data object ClearChatHistory : SettingsAction
     data object SaveSettings : SettingsAction
 }
@@ -49,7 +55,8 @@ sealed interface SettingsAction {
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
     private val getSettingsUseCase: GetSettingsUseCase,
-    private val updateSettingsUseCase: UpdateSettingsUseCase
+    private val updateSettingsUseCase: UpdateSettingsUseCase,
+    private val textToSpeechManager: TextToSpeechManager
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SettingsUiState())
@@ -73,6 +80,7 @@ class SettingsViewModel @Inject constructor(
                             language = settings.language,
                             theme = settings.theme,
                             generationConfig = settings.generationConfig,
+                            voiceGender = settings.voiceGender,
                             isLoading = false,
                             error = null
                         )
@@ -98,6 +106,8 @@ class SettingsViewModel @Inject constructor(
             is SettingsAction.UpdateTemperature -> updateTemperature(action.temperature)
             is SettingsAction.UpdateTopP -> updateTopP(action.topP)
             is SettingsAction.UpdateMaxTokens -> updateMaxTokens(action.maxTokens)
+            is SettingsAction.UpdateVoiceGender -> updateVoiceGender(action.gender)
+            is SettingsAction.TestVoice -> testVoice()
             is SettingsAction.ClearChatHistory -> clearChatHistory()
             is SettingsAction.SaveSettings -> saveSettings()
         }
@@ -105,10 +115,12 @@ class SettingsViewModel @Inject constructor(
 
     private fun updateLanguage(language: Language) {
         _uiState.update { it.copy(language = language) }
+        persistCurrentSettings()
     }
 
     private fun updateTheme(theme: ThemeMode) {
         _uiState.update { it.copy(theme = theme) }
+        persistCurrentSettings()
     }
 
     private fun updateTemperature(temperature: Float) {
@@ -118,6 +130,7 @@ class SettingsViewModel @Inject constructor(
                 generationConfig = state.generationConfig.copy(temperature = clamped)
             )
         }
+        persistCurrentSettings()
     }
 
     private fun updateTopP(topP: Float) {
@@ -127,6 +140,7 @@ class SettingsViewModel @Inject constructor(
                 generationConfig = state.generationConfig.copy(topP = clamped)
             )
         }
+        persistCurrentSettings()
     }
 
     private fun updateMaxTokens(maxTokens: Int) {
@@ -136,6 +150,52 @@ class SettingsViewModel @Inject constructor(
                 generationConfig = state.generationConfig.copy(maxTokens = clamped)
             )
         }
+        persistCurrentSettings()
+    }
+
+    private fun updateVoiceGender(gender: VoiceGender) {
+        _uiState.update { it.copy(voiceGender = gender) }
+        persistCurrentSettings()
+    }
+
+    private fun testVoice() {
+        viewModelScope.launch {
+            val gender = _uiState.value.voiceGender
+            textToSpeechManager.prepare(Locale.getDefault(), gender)
+                .onSuccess {
+                    val example = when (gender) {
+                        VoiceGender.FEMALE -> "This is the selected female voice."
+                        VoiceGender.MALE -> "This is the selected male voice."
+                    }
+                    textToSpeechManager.speakPreview(example)
+                }
+                .onFailure { throwable ->
+                    _events.emit(
+                        SettingsEvent.ShowError(
+                            throwable.message ?: "Text-to-speech is not available"
+                        )
+                    )
+                }
+        }
+    }
+
+    private fun persistCurrentSettings() {
+        val state = _uiState.value
+        val settings = AppSettings(
+            language = state.language,
+            theme = state.theme,
+            generationConfig = state.generationConfig,
+            voiceGender = state.voiceGender
+        )
+
+        viewModelScope.launch {
+            updateSettingsUseCase(settings)
+                .onFailure { throwable ->
+                    _uiState.update {
+                        it.copy(error = throwable.message ?: "Failed to save settings")
+                    }
+                }
+        }
     }
 
     private fun clearChatHistory() {
@@ -144,7 +204,8 @@ class SettingsViewModel @Inject constructor(
             val settings = AppSettings(
                 language = state.language,
                 theme = state.theme,
-                generationConfig = state.generationConfig
+                generationConfig = state.generationConfig,
+                voiceGender = state.voiceGender
             )
             updateSettingsUseCase(settings, clearHistory = true)
                 .onSuccess {
@@ -166,7 +227,8 @@ class SettingsViewModel @Inject constructor(
             val settings = AppSettings(
                 language = state.language,
                 theme = state.theme,
-                generationConfig = state.generationConfig
+                generationConfig = state.generationConfig,
+                voiceGender = state.voiceGender
             )
             updateSettingsUseCase(settings)
                 .onSuccess {

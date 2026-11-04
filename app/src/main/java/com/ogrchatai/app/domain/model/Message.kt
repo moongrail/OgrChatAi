@@ -8,7 +8,7 @@ data class Message(
     val content: String,
     val role: Role,
     val timestamp: Long = System.currentTimeMillis(),
-    val attachments: List<String> = emptyList(),
+    val attachments: List<Attachment> = emptyList(),
     val isPartial: Boolean = false
 ) {
     enum class Role {

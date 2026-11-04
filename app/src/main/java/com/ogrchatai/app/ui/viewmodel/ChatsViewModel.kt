@@ -26,6 +26,7 @@ data class ChatsUiState(
     val isLoading: Boolean = false,
     val error: String? = null,
     val showModelPicker: Boolean = false,
+    val pendingSelectedModelId: String = "",
     val downloadedModels: List<Triple<String, String, Boolean>> = emptyList(),
     val activeFilter: ChatFilter = ChatFilter.ALL,
     val showModelSettings: Boolean = false,
@@ -41,6 +42,7 @@ enum class ChatFilter(val label: String) {
 sealed interface ChatsEvent {
     data class SearchQueryChanged(val query: String) : ChatsEvent
     data class ChatCreated(val chatId: String) : ChatsEvent
+    data object NeedModelDownload : ChatsEvent
     data object ClearError : ChatsEvent
 }
 
@@ -71,6 +73,7 @@ class ChatsViewModel @Inject constructor(
     val events: StateFlow<List<ChatsEvent>> = _events.asStateFlow()
 
     private val _searchQuery = MutableStateFlow("")
+    private val _activeFilter = MutableStateFlow(ChatFilter.ALL)
     private var pendingSelectedModelId: String = ""
 
     init {
@@ -84,9 +87,9 @@ class ChatsViewModel @Inject constructor(
         viewModelScope.launch {
             combine(
                 getChatsUseCase(),
-                _searchQuery
-            ) { chats, query ->
-                val filter = _uiState.value.activeFilter
+                _searchQuery,
+                _activeFilter
+            ) { chats, query, filter ->
                 val filtered = chats.filter { chat ->
                     val matchesQuery = query.isBlank() || chat.title.contains(query, ignoreCase = true)
                     val matchesFilter = when (filter) {
@@ -138,7 +141,10 @@ class ChatsViewModel @Inject constructor(
             is ChatsAction.DeleteChat -> deleteChat(action.chatId)
             is ChatsAction.SelectModel -> selectModel(action.modelId)
             is ChatsAction.DismissModelPicker -> dismissModelPicker(action.createWithSelected)
-            is ChatsAction.FilterChats -> _uiState.update { it.copy(activeFilter = action.filter) }
+            is ChatsAction.FilterChats -> {
+                _uiState.update { it.copy(activeFilter = action.filter) }
+                _activeFilter.value = action.filter
+            }
             is ChatsAction.ToggleModelEnabled -> toggleModelEnabled(action.modelId)
             is ChatsAction.OpenModelSettings -> openModelSettings(action.modelId)
             is ChatsAction.DismissModelSettings -> _uiState.update {
@@ -157,6 +163,9 @@ class ChatsViewModel @Inject constructor(
             is ChatsEvent.ChatCreated -> {
                 _events.update { currentEvents -> currentEvents + event }
             }
+            is ChatsEvent.NeedModelDownload -> {
+                _events.update { currentEvents -> currentEvents + event }
+            }
             is ChatsEvent.ClearError -> {
                 _uiState.update { it.copy(error = null) }
             }
@@ -165,14 +174,18 @@ class ChatsViewModel @Inject constructor(
 
     private fun createChat() {
         val downloadedModels = _uiState.value.downloadedModels
-        if (downloadedModels.isEmpty()) {
-            viewModelScope.launch {
-                val chatId = createChatUseCase("New Chat", "TinyLlama/TinyLlama-1.1B-Chat-v1.0")
-                _events.update { it + ChatsEvent.ChatCreated(chatId.toString()) }
-            }
-        } else {
-            pendingSelectedModelId = downloadedModels.firstOrNull()?.first ?: ""
-            _uiState.update { it.copy(showModelPicker = true) }
+        // Only models that are explicitly enabled can be used by a new chat.
+        val enabledModels = downloadedModels.filter { it.third }
+        if (enabledModels.isEmpty()) {
+            _events.update { it + ChatsEvent.NeedModelDownload }
+            return
+        }
+        pendingSelectedModelId = enabledModels.first().first
+        _uiState.update {
+            it.copy(
+                showModelPicker = true,
+                pendingSelectedModelId = pendingSelectedModelId
+            )
         }
     }
 
@@ -182,7 +195,12 @@ class ChatsViewModel @Inject constructor(
             val modelName = modelRepository.getDownloadedModelById(modelId)?.name ?: modelId.substringAfter('/')
             val chatId = createChatUseCase("Chat with $modelName", modelId)
             _events.update { it + ChatsEvent.ChatCreated(chatId.toString()) }
-            _uiState.update { it.copy(showModelPicker = false) }
+            _uiState.update {
+                it.copy(
+                    showModelPicker = false,
+                    pendingSelectedModelId = ""
+                )
+            }
         }
     }
 
@@ -190,7 +208,7 @@ class ChatsViewModel @Inject constructor(
         if (createWithSelected && pendingSelectedModelId.isNotBlank()) {
             selectModel(pendingSelectedModelId)
         } else {
-            _uiState.update { it.copy(showModelPicker = false) }
+            _uiState.update { it.copy(showModelPicker = false, pendingSelectedModelId = "") }
         }
     }
 

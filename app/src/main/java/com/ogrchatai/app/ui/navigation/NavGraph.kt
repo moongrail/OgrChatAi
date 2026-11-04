@@ -21,11 +21,14 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.ogrchatai.app.ui.screen.chatdetail.ChatDetailScreen
 import com.ogrchatai.app.ui.screen.chats.ChatsScreenWrapper
+import com.ogrchatai.app.ui.screen.modelbrowser.DownloadedModelsScreen
 import com.ogrchatai.app.ui.screen.modelbrowser.ModelBrowserScreen
 import com.ogrchatai.app.ui.screen.settings.SettingsScreenWrapper
+import com.ogrchatai.app.ui.screen.voicecall.VoiceCallScreen
 import com.ogrchatai.app.ui.viewmodel.ChatDetailViewModel
 import com.ogrchatai.app.ui.viewmodel.ChatsViewModel
 import com.ogrchatai.app.ui.viewmodel.SettingsViewModel
+import com.ogrchatai.app.ui.viewmodel.VoiceCallViewModel
 
 private const val ANIMATION_DURATION = 300
 
@@ -89,7 +92,28 @@ private fun NavGraphBuilder.chatsGraph(navController: NavHostController) {
             },
             onSettingsClick = {
                 navController.navigate(Screen.Settings.route)
+            },
+            onVoiceCallClick = {
+                navController.navigate(Screen.VoiceCall.route)
+            },
+            onManageModelsClick = {
+                navController.navigate(Screen.DownloadedModels.route)
             }
+        )
+    }
+
+    composable(
+        route = Screen.VoiceCall.route,
+        enterTransition = { slideInFromRight },
+        exitTransition = { slideOutToLeft },
+        popEnterTransition = { slideInFromLeft },
+        popExitTransition = { slideOutToRight }
+    ) {
+        val viewModel: VoiceCallViewModel = hiltViewModel()
+        VoiceCallScreen(
+            viewModel = viewModel,
+            onBackClick = { navController.popBackStack() },
+            onBrowseModels = { navController.navigate(Screen.ModelBrowser.route) }
         )
     }
 
@@ -110,7 +134,8 @@ private fun NavGraphBuilder.chatsGraph(navController: NavHostController) {
         ChatDetailScreen(
             viewModel = viewModel,
             chatId = chatId,
-            onBackClick = { navController.popBackStack() }
+            onBackClick = { navController.popBackStack() },
+            onBrowseModels = { navController.navigate(Screen.ModelBrowser.route) }
         )
     }
 }
@@ -128,6 +153,19 @@ private fun NavGraphBuilder.modelGraph(navController: NavHostController) {
                 navController.navigate(Screen.ModelDetail.createRoute(modelId))
             },
             onBackClick = { navController.popBackStack() }
+        )
+    }
+
+    composable(
+        route = Screen.DownloadedModels.route,
+        enterTransition = { slideInFromRight },
+        exitTransition = { slideOutToLeft },
+        popEnterTransition = { slideInFromLeft },
+        popExitTransition = { slideOutToRight }
+    ) {
+        DownloadedModelsScreen(
+            onBackClick = { navController.popBackStack() },
+            onBrowseModels = { navController.navigate(Screen.ModelBrowser.route) }
         )
     }
 
@@ -162,7 +200,8 @@ private fun NavGraphBuilder.settingsGraph(navController: NavHostController) {
         val viewModel: SettingsViewModel = hiltViewModel()
         SettingsScreenWrapper(
             viewModel = viewModel,
-            onBackClick = { navController.popBackStack() }
+            onBackClick = { navController.popBackStack() },
+            onDownloadedModelsClick = { navController.navigate(Screen.DownloadedModels.route) }
         )
     }
 }

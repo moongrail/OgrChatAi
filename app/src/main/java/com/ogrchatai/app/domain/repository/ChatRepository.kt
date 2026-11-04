@@ -21,4 +21,10 @@ interface ChatRepository {
     suspend fun getMessageCount(chatId: Long): Int
     suspend fun updateChatTitle(chatId: Long, title: String)
     suspend fun searchChats(query: String): List<Chat>
+
+    /**
+     * Encrypts text and attachment metadata of messages written by older app versions and
+     * removes the plaintext copies from the database.
+     */
+    suspend fun migrateLegacyMessages()
 }

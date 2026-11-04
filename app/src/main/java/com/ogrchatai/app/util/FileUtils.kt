@@ -46,29 +46,46 @@ object FileUtils {
     }
 
     fun getFileInfo(context: Context, uri: Uri): FileInfo? {
-        return try {
-            val cursor = context.contentResolver.query(uri, null, null, null, null)
-            cursor?.use {
-                if (it.moveToFirst()) {
-                    val nameIndex = it.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
-                    val sizeIndex = it.getColumnIndex(android.provider.OpenableColumns.SIZE)
+        var name: String? = null
+        var size: Long? = null
 
-                    val name = if (nameIndex >= 0) it.getString(nameIndex) else "unknown"
-                    val size = if (sizeIndex >= 0) it.getLong(sizeIndex) else 0L
+        try {
+            context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                    val sizeIndex = cursor.getColumnIndex(android.provider.OpenableColumns.SIZE)
 
-                    FileInfo(
-                        name = name,
-                        size = size,
-                        sizeFormatted = formatFileSize(size),
-                        mimeType = context.contentResolver.getType(uri) ?: "unknown"
-                    )
-                } else {
-                    null
+                    if (nameIndex >= 0 && !cursor.isNull(nameIndex)) {
+                        name = cursor.getString(nameIndex)
+                    }
+                    if (sizeIndex >= 0 && !cursor.isNull(sizeIndex)) {
+                        size = cursor.getLong(sizeIndex)
+                    }
                 }
             }
-        } catch (e: Exception) {
+        } catch (_: Exception) {
+            // Some content providers do not support queries. Fall back to the URI itself.
+        }
+
+        val mimeType = try {
+            context.contentResolver.getType(uri)
+        } catch (_: Exception) {
             null
         }
+
+        val resolvedName = name
+            ?.takeIf { it.isNotBlank() }
+            ?: uri.lastPathSegment
+                ?.substringAfterLast('/')
+                ?.takeIf { it.isNotBlank() }
+            ?: "file"
+
+        return FileInfo(
+            name = resolvedName,
+            size = size ?: -1L,
+            sizeFormatted = formatFileSize(size ?: -1L),
+            mimeType = mimeType ?: "application/octet-stream"
+        )
     }
 
     fun formatFileSize(sizeInBytes: Long): String {
@@ -93,6 +110,12 @@ object FileUtils {
 
     fun getCacheDir(context: Context, subDir: String): File {
         return File(context.cacheDir, subDir).apply { mkdirs() }
+    }
+
+    const val ATTACHMENTS_DIR = "attachments"
+
+    fun getAttachmentDir(context: Context): File {
+        return File(context.filesDir, ATTACHMENTS_DIR).apply { mkdirs() }
     }
 
     fun deleteFile(filePath: String): Boolean {
@@ -152,16 +175,27 @@ object FileUtils {
 
     fun isValidFileName(fileName: String): Boolean {
         val invalidChars = charArrayOf('/', '\\', ':', '*', '?', '"', '<', '>', '|')
-        return fileName.isNotEmpty() && invalidChars.none { it in fileName }
+        return fileName.isNotEmpty() &&
+            fileName != "." &&
+            fileName != ".." &&
+            invalidChars.none { it in fileName } &&
+            fileName.none { it.isISOControl() }
     }
 
     fun sanitizeFileName(fileName: String): String {
         val invalidChars = charArrayOf('/', '\\', ':', '*', '?', '"', '<', '>', '|')
         var sanitized = fileName
+            .substringAfterLast('/')
+            .substringAfterLast('\\')
         invalidChars.forEach { char ->
             sanitized = sanitized.replace(char, '_')
         }
-        return sanitized.trim()
+        sanitized = sanitized
+            .filterNot { it.isISOControl() }
+            .trim()
+            .trim('.')
+            .take(120)
+        return sanitized.ifBlank { "file" }
     }
 
     fun createTempFile(context: Context, prefix: String, suffix: String): File {

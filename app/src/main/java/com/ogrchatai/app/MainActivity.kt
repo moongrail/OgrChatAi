@@ -13,14 +13,20 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.ogrchatai.app.data.ml.InferenceEngine
 import com.ogrchatai.app.ui.navigation.OgrChatAiNavHost
 import com.ogrchatai.app.ui.theme.OgrChatAiTheme
 import com.ogrchatai.app.ui.viewmodel.SettingsViewModel
 import com.ogrchatai.app.domain.model.ThemeMode
 import dagger.hilt.android.AndroidEntryPoint
+import javax.inject.Inject
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
+
+    @Inject
+    lateinit var inferenceEngine: InferenceEngine
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -43,5 +49,15 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onDestroy() {
+        // Pressing Back finishes the activity and releases the native model. Removing the task
+        // from Recents also destroys the activity without a configuration change. Pressing Home
+        // only moves the app to the background and deliberately does not unload the model.
+        if (isFinishing || !isChangingConfigurations) {
+            inferenceEngine.unloadAllModels()
+        }
+        super.onDestroy()
     }
 }

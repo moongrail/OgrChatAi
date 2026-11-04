@@ -1,5 +1,6 @@
 package com.ogrchatai.app.domain.repository
 
+import com.ogrchatai.app.domain.model.VoiceGender
 import kotlinx.coroutines.flow.Flow
 
 interface SettingsRepository {
@@ -7,9 +8,11 @@ interface SettingsRepository {
     val language: Flow<String>
     val fontSize: Flow<Int>
     val defaultModelId: Flow<String>
+    val voiceGender: Flow<VoiceGender>
 
     suspend fun setThemeMode(mode: String)
     suspend fun setLanguage(language: String)
     suspend fun setFontSize(size: Int)
     suspend fun setDefaultModelId(modelId: String)
+    suspend fun setVoiceGender(gender: VoiceGender)
 }

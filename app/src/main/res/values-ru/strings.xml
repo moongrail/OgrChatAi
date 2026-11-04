@@ -23,6 +23,14 @@
     <string name="chat_send">Отправить</string>
     <string name="chat_stop">Стоп</string>
     <string name="chat_attach">Прикрепить файл</string>
+    <string name="chat_attach_title">Прикрепить</string>
+    <string name="chat_attach_photo">Фото</string>
+    <string name="chat_attach_document">Документ</string>
+    <string name="chat_voice_input">Голосовой ввод</string>
+    <string name="chat_voice_stop">Остановить голосовой ввод</string>
+    <string name="chat_voice_listening">Слушаю…</string>
+    <string name="chat_voice_processing">Распознавание…</string>
+    <string name="chat_attachment_processing">Обработка файла…</string>
     <string name="chat_generating">Генерация…</string>
     <string name="chat_empty_conversation">Начните диалог</string>
     <string name="chat_empty_conversation_subtitle">Отправьте сообщение, чтобы начать разговор с ИИ</string>
@@ -65,6 +73,17 @@
     <!-- Common -->
     <string name="error_network">Ошибка сети. Проверьте подключение.</string>
     <string name="error_unknown">Произошла непредвиденная ошибка.</string>
+
+    <!-- Voice input -->
+    <string name="voice_error_unavailable">Распознавание речи недоступно на этом устройстве.</string>
+    <string name="voice_error_permission">Для голосового ввода нужен доступ к микрофону.</string>
+    <string name="voice_error_no_match">Речь не распознана. Попробуйте ещё раз.</string>
+    <string name="voice_error_no_speech">Речь не обнаружена. Попробуйте ещё раз.</string>
+    <string name="voice_error_network">Для распознавания речи нужно подключение или офлайн-пакет языка.</string>
+    <string name="voice_error_busy">Распознавание речи занято. Попробуйте ещё раз.</string>
+    <string name="voice_error_audio">Не удалось получить доступ к микрофону. Попробуйте ещё раз.</string>
+    <string name="voice_error_language">Выбранный язык речи не поддерживается на этом устройстве.</string>
+    <string name="voice_error_generic">Не удалось выполнить голосовой ввод. Попробуйте ещё раз.</string>
     <string name="retry">Повторить</string>
     <string name="ok">OK</string>
     <string name="yes">Да</string>

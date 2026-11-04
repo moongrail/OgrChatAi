@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Memory
+import androidx.compose.material.icons.filled.PhoneInTalk
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Shop
@@ -77,6 +78,8 @@ fun ChatsScreen(
     onDeleteChat: (Long) -> Unit,
     onModelBrowserClick: () -> Unit,
     onSettingsClick: () -> Unit,
+    onVoiceCallClick: () -> Unit,
+    onManageModelsClick: () -> Unit = {},
     onFilterChange: (ChatFilter) -> Unit,
     downloadedModels: List<Triple<String, String, Boolean>> = emptyList(),
     onModelSelected: (String) -> Unit = {},
@@ -106,6 +109,9 @@ fun ChatsScreen(
                     )
                 },
                 actions = {
+                    IconButton(onClick = onVoiceCallClick) {
+                        Icon(Icons.Default.PhoneInTalk, contentDescription = "Voice call")
+                    }
                     IconButton(onClick = onModelBrowserClick) {
                         Icon(Icons.Default.Shop, contentDescription = "Model Browser")
                     }
@@ -266,7 +272,15 @@ fun ChatsScreen(
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                            Spacer(modifier = Modifier.width(4.dp))
+                            TextButton(
+                                onClick = onManageModelsClick,
+                                contentPadding = PaddingValues(horizontal = 8.dp)
+                            ) {
+                                Text(
+                                    text = "Manage",
+                                    style = MaterialTheme.typography.labelSmall
+                                )
+                            }
                             Icon(
                                 if (modelsExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
                                 contentDescription = null,

@@ -51,6 +51,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -79,9 +80,19 @@ fun ModelBrowserScreen(
     var searchQuery by remember { mutableStateOf("") }
     var activeSearch by remember { mutableStateOf(false) }
     var showFilters by remember { mutableStateOf(false) }
+    val keyboardController = LocalSoftwareKeyboardController.current
 
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val listState = rememberLazyListState()
+
+    // The Material3 SearchBar uses an overlay while active. Once results arrive, collapse it so
+    // the compatible models are actually visible instead of an empty suggestion surface.
+    LaunchedEffect(uiState.searchResults.size, uiState.isLoading) {
+        if (activeSearch && !uiState.isLoading && uiState.searchResults.isNotEmpty()) {
+            activeSearch = false
+            keyboardController?.hide()
+        }
+    }
 
     val shouldLoadMore by remember {
         derivedStateOf {
@@ -328,7 +339,7 @@ fun ModelBrowserScreen(
                     EmptyStateView(
                         icon = Icons.Filled.Search,
                         title = "Search for GGUF models",
-                        subtitle = "Type at least 2 characters to search HuggingFace.\nOnly GGUF-quantized models run on-device."
+                        subtitle = "Type at least 2 characters to search HuggingFace.\nOnly GGUF models that likely fit your device RAM are shown."
                     )
                 }
                 else -> {
@@ -363,7 +374,9 @@ fun ModelBrowserScreen(
                                             ModelBrowserAction.CancelDownload(model.id)
                                         )
                                     },
-                                    onModelClick = { onModelClick(model.id) }
+                                    onModelClick = {
+                                    viewModel.onAction(ModelBrowserAction.DownloadModel(model.id))
+                                }
                                 )
                             }
 

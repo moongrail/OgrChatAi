@@ -36,6 +36,9 @@ interface ChatDao {
     @Query("SELECT * FROM chat_messages WHERE chat_id = :chatId ORDER BY timestamp ASC")
     suspend fun getMessagesByChatIdList(chatId: Long): List<ChatMessageEntity>
 
+    @Query("SELECT * FROM chat_messages")
+    suspend fun getAllMessages(): List<ChatMessageEntity>
+
     @Query("SELECT * FROM chat_messages WHERE id = :messageId")
     suspend fun getMessageById(messageId: Long): ChatMessageEntity?
 

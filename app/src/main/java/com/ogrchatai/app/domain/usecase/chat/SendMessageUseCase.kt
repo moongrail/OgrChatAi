@@ -46,7 +46,6 @@ class SendMessageUseCase @Inject constructor(
         }
 
         val messages = chatRepository.getMessages(chatId).firstOrNull().orEmpty()
-        val chatHistory = messages.map { "${it.role.name}: ${it.content}" }
 
         val usedModelId = modelId ?: chat.modelId
         val modelPath = modelRepository.getModelPath(usedModelId)
@@ -61,7 +60,7 @@ class SendMessageUseCase @Inject constructor(
             config.systemPrompt.ifBlank { com.ogrchatai.app.domain.model.GenerationConfig.DEFAULT_SYSTEM_PROMPT }
         }
 
-        val prompt = buildPrompt(chatHistory, effectiveSystemPrompt)
+        val prompt = buildPrompt(messages)
 
         val genConfig = InferenceEngine.GenerationConfig(
             maxTokens = config.maxTokens,
@@ -98,7 +97,14 @@ class SendMessageUseCase @Inject constructor(
                     ))
                 }
 
-                val fullContent = sb.toString()
+                val fullContent = sb.toString().trim()
+
+                if (fullContent.isBlank()) {
+                    trySend(Result.failure(SendMessageException("The model returned an empty response")))
+                    close()
+                    return@callbackFlow
+                }
+
                 val assistantMsgId = saveAssistantMessage(chatId, fullContent)
 
                 trySend(Result.success(
@@ -117,12 +123,66 @@ class SendMessageUseCase @Inject constructor(
         }
     }
 
-    private fun buildPrompt(chatHistory: List<String>, systemPrompt: String): String {
-        val sb = StringBuilder()
-        chatHistory.forEachIndexed { _, message ->
-            sb.appendLine(message)
+    private fun buildPrompt(messages: List<ChatMessage>): String {
+        val recentMessages = messages.takeLast(MAX_HISTORY_MESSAGES)
+        val blocks = recentMessages.map { formatMessageWithAttachments(it) }
+
+        // Keep the newest messages when the prompt is too large for the model context.
+        val selectedBlocks = mutableListOf<String>()
+        var usedChars = 0
+        for (block in blocks.asReversed()) {
+            val remaining = MAX_PROMPT_CHARS - usedChars
+            if (remaining <= 0) break
+
+            val clipped = if (block.length > remaining) block.take(remaining) else block
+            selectedBlocks.add(0, clipped)
+            usedChars += clipped.length + 1
         }
-        return sb.toString().trim()
+
+        return selectedBlocks.joinToString("\n").trim()
+    }
+
+    private fun formatMessageWithAttachments(message: ChatMessage): String {
+        val sb = StringBuilder()
+        val roleLabel = when (message.role) {
+            MessageRole.USER -> "User"
+            MessageRole.ASSISTANT -> "Assistant"
+            MessageRole.SYSTEM -> "System"
+        }
+
+        sb.append(roleLabel).append(": ").append(message.content.trim())
+
+        message.attachments.forEach { attachment ->
+            sb.append("\n[Attached file: ")
+                .append(attachment.fileName)
+                .append(" | ")
+                .append(attachment.mimeType)
+                .append(" | ")
+                .append(attachment.formattedSize)
+                .append("]")
+
+            val content = attachment.content?.trim()
+            if (!content.isNullOrBlank()) {
+                sb.append("\n<<<FILE CONTENT START>>>\n")
+                    .append(content.take(MAX_ATTACHMENT_TEXT_CHARS))
+                if (content.length > MAX_ATTACHMENT_TEXT_CHARS) {
+                    sb.append("\n… [file content truncated]")
+                }
+                sb.append("\n<<<FILE CONTENT END>>>")
+            } else if (attachment.isImage) {
+                sb.append(
+                    "\n[Image attachment. This model works with text only, " +
+                        "so the image itself is not available. Ask the user for a description if needed.]"
+                )
+            } else {
+                sb.append(
+                    "\n[Binary attachment. Text could not be extracted from this file; " +
+                        "the file name and metadata are available to you.]"
+                )
+            }
+        }
+
+        return sb.toString()
     }
 
     suspend fun saveAssistantMessage(chatId: Long, content: String): Long {
@@ -138,3 +198,6 @@ class SendMessageUseCase @Inject constructor(
 class SendMessageException(message: String) : Exception(message)
 
 private const val TAG = "SendMessageUseCase"
+private const val MAX_HISTORY_MESSAGES = 30
+private const val MAX_PROMPT_CHARS = 24_000
+private const val MAX_ATTACHMENT_TEXT_CHARS = 20_000

@@ -1,6 +1,7 @@
 package com.ogrchatai.app.data.repository
 
 import com.ogrchatai.app.data.preferences.UserPreferences
+import com.ogrchatai.app.domain.model.VoiceGender
 import com.ogrchatai.app.domain.repository.SettingsRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
@@ -25,6 +26,9 @@ class SettingsRepositoryImpl @Inject constructor(
     override val defaultModelId: Flow<String>
         get() = userPreferences.defaultModelId
 
+    override val voiceGender: Flow<VoiceGender>
+        get() = userPreferences.voiceGender
+
     override suspend fun setThemeMode(mode: String) {
         userPreferences.setThemeMode(
             when (mode.lowercase()) {
@@ -45,5 +49,9 @@ class SettingsRepositoryImpl @Inject constructor(
 
     override suspend fun setDefaultModelId(modelId: String) {
         userPreferences.setDefaultModelId(modelId)
+    }
+
+    override suspend fun setVoiceGender(gender: VoiceGender) {
+        userPreferences.setVoiceGender(gender)
     }
 }

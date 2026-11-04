@@ -76,6 +76,30 @@ class InferenceEngine @Inject constructor(
                         )
                     }
 
+                    // Only one llama.cpp engine can be active at a time. If a chat model is
+                    // already loaded, stop it and free its native memory before loading the
+                    // model requested by voice-call (or vice versa).
+                    if (currentModelId != null && currentModelId != modelId) {
+                        Log.d(TAG, "Switching model: $currentModelId -> $modelId")
+                        if (isGenerating.get()) {
+                            try {
+                                aiKitChat?.cancelGeneration()
+                            } catch (_: Exception) {
+                                // Ignore cancellation errors while switching.
+                            }
+                            isGenerating.set(false)
+                        }
+                        try {
+                            aiKitEngine?.unloadModel()
+                        } catch (_: Exception) {
+                            // The old engine may already be released.
+                        }
+                        aiKitEngine = null
+                        aiKitChat = null
+                        currentModelId = null
+                        loadedModels.clear()
+                    }
+
                     Log.d(TAG, "Loading model via AiKit: $modelId from $filePath (${file.length() / (1024 * 1024)}MB)")
 
                     val engine = AiKitEngine.create(context)
@@ -259,7 +283,19 @@ class InferenceEngine @Inject constructor(
     }
 
     fun unloadAllModels() {
-        aiKitEngine?.unloadModel()
+        if (isGenerating.get()) {
+            try {
+                aiKitChat?.cancelGeneration()
+            } catch (_: Exception) {
+                // Ignore cancellation errors during shutdown.
+            }
+            isGenerating.set(false)
+        }
+        try {
+            aiKitEngine?.unloadModel()
+        } catch (_: Exception) {
+            // Ignore unload errors during shutdown.
+        }
         aiKitEngine = null
         aiKitChat = null
         currentModelId = null

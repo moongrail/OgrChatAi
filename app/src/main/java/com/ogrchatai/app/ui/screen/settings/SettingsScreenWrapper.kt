@@ -8,10 +8,12 @@ import com.ogrchatai.app.ui.viewmodel.SettingsViewModel
 @Composable
 fun SettingsScreenWrapper(
     viewModel: SettingsViewModel,
-    onBackClick: () -> Unit
+    onBackClick: () -> Unit,
+    onDownloadedModelsClick: () -> Unit
 ) {
     SettingsScreen(
         viewModel = viewModel,
-        onBackClick = onBackClick
+        onBackClick = onBackClick,
+        onDownloadedModelsClick = onDownloadedModelsClick
     )
 }
