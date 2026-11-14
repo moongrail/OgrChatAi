@@ -16,7 +16,7 @@ import androidx.room.PrimaryKey
             onDelete = ForeignKey.CASCADE
         )
     ],
-    indices = [Index(value = ["chat_id"])]
+    indices = [Index(value = ["chat_id", "timestamp"])]
 )
 data class ChatMessageEntity(
     @PrimaryKey(autoGenerate = true)

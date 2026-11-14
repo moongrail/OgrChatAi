@@ -11,6 +11,8 @@ import androidx.datastore.preferences.core.doublePreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.google.gson.Gson
 import com.ogrchatai.app.domain.model.ModelSettings
+import com.ogrchatai.app.domain.model.TtsEngine
+import com.ogrchatai.app.domain.model.TtsVoice
 import com.ogrchatai.app.domain.model.VoiceGender
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
@@ -75,28 +77,39 @@ class UserPreferences @Inject constructor(
         VoiceGender.fromStorage(preferences[VOICE_GENDER_KEY])
     }
 
+    val ttsEngine: Flow<TtsEngine> = dataStore.data.map { preferences ->
+        TtsEngine.fromStorage(preferences[TTS_ENGINE_KEY])
+    }
+
+    val ttsVoice: Flow<TtsVoice> = dataStore.data.map { preferences ->
+        TtsVoice.fromStorage(preferences[TTS_VOICE_KEY])
+    }
+
+    val legacyMigrationDone: Flow<Boolean> = dataStore.data.map { preferences ->
+        preferences[LEGACY_MIGRATION_DONE_KEY] ?: false
+    }
+
     fun getModelSettings(modelId: String): Flow<ModelSettings> {
         val key = stringPreferencesKey("model_settings_$modelId")
         return dataStore.data.map { preferences ->
-            val json = preferences[key] ?: return@map ModelSettings.default(modelId)
-            try {
-                gson.fromJson(json, ModelSettings::class.java)
-            } catch (e: Exception) {
-                ModelSettings.default(modelId)
-            }
+            normalizeModelSettings(modelId, preferences[key])
         }
     }
 
     suspend fun getModelSettingsOnce(modelId: String): ModelSettings {
         val key = stringPreferencesKey("model_settings_$modelId")
-        return dataStore.data.first().let { preferences ->
-            val json = preferences[key] ?: return@let ModelSettings.default(modelId)
-            try {
-                gson.fromJson(json, ModelSettings::class.java)
-            } catch (e: Exception) {
-                ModelSettings.default(modelId)
-            }
-        }
+        val preferences = dataStore.data.first()
+        return normalizeModelSettings(modelId, preferences[key])
+    }
+
+    private fun normalizeModelSettings(modelId: String, json: String?): ModelSettings {
+        if (json.isNullOrBlank()) return ModelSettings.default(modelId)
+        val parsed = try {
+            gson.fromJson(json, ModelSettings::class.java)
+        } catch (_: Exception) {
+            null
+        } ?: return ModelSettings.default(modelId)
+        return parsed.copy(modelId = modelId)
     }
 
     suspend fun saveModelSettings(settings: ModelSettings) {
@@ -167,6 +180,24 @@ class UserPreferences @Inject constructor(
         }
     }
 
+    suspend fun setTtsEngine(engine: TtsEngine) {
+        dataStore.edit { preferences ->
+            preferences[TTS_ENGINE_KEY] = engine.storageValue
+        }
+    }
+
+    suspend fun setTtsVoice(voice: TtsVoice) {
+        dataStore.edit { preferences ->
+            preferences[TTS_VOICE_KEY] = voice.storageValue
+        }
+    }
+
+    suspend fun setLegacyMigrationDone(done: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[LEGACY_MIGRATION_DONE_KEY] = done
+        }
+    }
+
     enum class ThemeMode {
         SYSTEM, LIGHT, DARK
     }
@@ -182,5 +213,8 @@ class UserPreferences @Inject constructor(
         private val TOP_P_KEY = doublePreferencesKey("top_p_raw")
         private val STREAMING_ENABLED_KEY = booleanPreferencesKey("streaming_enabled")
         private val VOICE_GENDER_KEY = stringPreferencesKey("voice_gender")
+        private val TTS_ENGINE_KEY = stringPreferencesKey("tts_engine")
+        private val TTS_VOICE_KEY = stringPreferencesKey("tts_voice")
+        private val LEGACY_MIGRATION_DONE_KEY = booleanPreferencesKey("legacy_migration_done")
     }
 }

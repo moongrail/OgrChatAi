@@ -5,6 +5,7 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.ogrchatai.app.data.files.AttachmentProcessor
+import com.ogrchatai.app.data.ml.InferenceEngine
 import com.ogrchatai.app.domain.model.Attachment
 import com.ogrchatai.app.domain.model.Chat
 import com.ogrchatai.app.domain.model.ChatMessage
@@ -17,6 +18,7 @@ import com.ogrchatai.app.domain.repository.ModelRepository
 import com.ogrchatai.app.domain.usecase.chat.GetMessagesUseCase
 import com.ogrchatai.app.domain.usecase.chat.SendMessageException
 import com.ogrchatai.app.domain.usecase.chat.SendMessageUseCase
+import com.ogrchatai.app.util.TokenEstimator
 import com.ogrchatai.app.util.VoiceInputManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
@@ -43,6 +45,10 @@ data class ChatDetailUiState(
     val isListening: Boolean = false,
     val isVoiceProcessing: Boolean = false,
     val streamingToken: String = "",
+    val reasoningToken: String = "",
+    val contextUsedTokens: Int = 0,
+    val contextWindowTokens: Int = 4096,
+    val contextStartTimestamp: Long = 0L,
     val isLoading: Boolean = false,
     val error: String? = null,
     val modelStatus: String = "",
@@ -56,6 +62,7 @@ data class ChatDetailUiState(
 sealed interface ChatDetailEvent {
     data object NavigateBack : ChatDetailEvent
     data class ShowError(val message: String) : ChatDetailEvent
+    data class ShowMessage(val message: String) : ChatDetailEvent
 }
 
 @HiltViewModel
@@ -66,7 +73,8 @@ class ChatDetailViewModel @Inject constructor(
     private val attachmentProcessor: AttachmentProcessor,
     private val voiceInputManager: VoiceInputManager,
     private val chatRepository: ChatRepository,
-    private val modelRepository: ModelRepository
+    private val modelRepository: ModelRepository,
+    private val inferenceEngine: InferenceEngine
 ) : ViewModel() {
 
     private val chatId: Long = savedStateHandle.get<Long>("chatId") ?: 0L
@@ -84,6 +92,10 @@ class ChatDetailViewModel @Inject constructor(
 
     private var currentChat: Chat? = null
 
+    private val streamBuffer = StringBuilder()
+    private val reasoningBuffer = StringBuilder()
+    private var streamFlushJob: Job? = null
+
     init {
         if (chatId > 0) {
             observeChat()
@@ -100,11 +112,20 @@ class ChatDetailViewModel @Inject constructor(
                     ?.takeIf { it.isNotBlank() }
                     ?.let { id -> modelRepository.getDownloadedModelById(id)?.name ?: id.substringAfter('/') }
                     ?: "No model selected"
+                val contextWindow = chat?.modelId
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let { id -> modelRepository.getModelSettingsOnce(id).contextSize }
+                    ?.coerceIn(1024, 8192)
+                    ?: DEFAULT_CONTEXT_WINDOW
+                val memoryStart = chat?.memoryClearedAt ?: 0L
                 _uiState.update {
                     it.copy(
                         chatTitle = chat?.title?.takeIf { value -> value.isNotBlank() } ?: "Chat",
                         modelId = chat?.modelId.orEmpty(),
-                        modelName = modelName
+                        modelName = modelName,
+                        contextWindowTokens = contextWindow,
+                        contextStartTimestamp = memoryStart,
+                        contextUsedTokens = estimateContext(it.messages, memoryStart)
                     )
                 }
             }
@@ -140,7 +161,14 @@ class ChatDetailViewModel @Inject constructor(
                             )
                         }
                         _uiState.update {
-                            it.copy(messages = messages, isLoading = false)
+                            it.copy(
+                                messages = messages,
+                                isLoading = false,
+                                contextUsedTokens = estimateContext(
+                                    messages,
+                                    it.contextStartTimestamp
+                                )
+                            )
                         }
                     }
                     .onFailure { throwable ->
@@ -172,7 +200,15 @@ class ChatDetailViewModel @Inject constructor(
         val chat = currentChat ?: return
         viewModelScope.launch {
             chatRepository.updateChat(chat.copy(modelId = modelId))
-            _uiState.update { it.copy(showModelPicker = false) }
+            val contextWindow = runCatching {
+                modelRepository.getModelSettingsOnce(modelId).contextSize
+            }.getOrDefault(DEFAULT_CONTEXT_WINDOW)
+            _uiState.update {
+                it.copy(
+                    showModelPicker = false,
+                    contextWindowTokens = contextWindow
+                )
+            }
         }
     }
 
@@ -182,9 +218,14 @@ class ChatDetailViewModel @Inject constructor(
             val numericId = messageId.toLongOrNull()
             if (numericId != null) {
                 chatRepository.deleteMessage(numericId)
+                inferenceEngine.invalidateConversation("chat:$chatId")
             }
             _uiState.update { state ->
-                state.copy(messages = state.messages.filterNot { it.id == messageId })
+                val messages = state.messages.filterNot { it.id == messageId }
+                state.copy(
+                    messages = messages,
+                    contextUsedTokens = estimateContext(messages, state.contextStartTimestamp)
+                )
             }
         }
     }
@@ -192,12 +233,47 @@ class ChatDetailViewModel @Inject constructor(
     fun clearMessages() {
         viewModelScope.launch {
             chatRepository.deleteMessagesByChatId(chatId)
-            _uiState.update { it.copy(messages = emptyList(), streamingToken = "") }
+            inferenceEngine.invalidateConversation("chat:$chatId")
+            streamBuffer.clear()
+            reasoningBuffer.clear()
+            _uiState.update {
+                it.copy(
+                    messages = emptyList(),
+                    streamingToken = "",
+                    reasoningToken = "",
+                    contextUsedTokens = 0
+                )
+            }
+        }
+    }
+
+    /**
+     * Stops sending earlier turns to the model without deleting the visible
+     * messages. The current chat stays readable, but the model starts with a
+     * clean memory from now on.
+     */
+    fun clearMemory() {
+        viewModelScope.launch {
+            val clearedAt = System.currentTimeMillis()
+            chatRepository.clearChatMemory(chatId, clearedAt)
+            inferenceEngine.invalidateConversation("chat:$chatId")
+            _uiState.update { state ->
+                state.copy(
+                    contextStartTimestamp = clearedAt,
+                    contextUsedTokens = estimateContext(state.messages, clearedAt)
+                )
+            }
+            _events.emit(
+                ChatDetailEvent.ShowMessage(
+                    "Memory cleared. Earlier messages are hidden from the model."
+                )
+            )
         }
     }
 
     fun deleteChat() {
         viewModelScope.launch {
+            inferenceEngine.invalidateConversation("chat:$chatId")
             chatRepository.deleteChat(chatId)
         }
     }
@@ -220,12 +296,15 @@ class ChatDetailViewModel @Inject constructor(
                     attachments = existing.attachments
                 )
                 chatRepository.updateMessage(chatMessage)
+                inferenceEngine.invalidateConversation("chat:$chatId")
             }
             _uiState.update { state ->
+                val messages = state.messages.map {
+                    if (it.id == messageId) it.copy(content = trimmed) else it
+                }
                 state.copy(
-                    messages = state.messages.map {
-                        if (it.id == messageId) it.copy(content = trimmed) else it
-                    }
+                    messages = messages,
+                    contextUsedTokens = estimateContext(messages, state.contextStartTimestamp)
                 )
             }
         }
@@ -251,16 +330,21 @@ class ChatDetailViewModel @Inject constructor(
         )
 
         _uiState.update {
+            val messages = it.messages + userMessage
             it.copy(
-                messages = it.messages + userMessage,
+                messages = messages,
                 currentInput = "",
                 attachments = emptyList(),
                 isGenerating = true,
                 streamingToken = "",
+                reasoningToken = "",
+                contextUsedTokens = estimateContext(messages, it.contextStartTimestamp),
                 error = null,
                 modelStatus = "Loading model..."
             )
         }
+        streamBuffer.clear()
+        reasoningBuffer.clear()
 
         generationJob = viewModelScope.launch {
             try {
@@ -286,15 +370,24 @@ class ChatDetailViewModel @Inject constructor(
     private suspend fun handleGenerationResponse(response: SendMessageResponse) {
         when {
             response.isStreaming -> {
-                _uiState.update { currentState ->
-                    currentState.copy(
-                        streamingToken = currentState.streamingToken + response.token,
-                        modelStatus = ""
-                    )
+                if (response.token.isEmpty() && response.reasoningToken.isEmpty()) {
+                    if (_uiState.value.modelStatus.startsWith("Loading")) {
+                        _uiState.update { it.copy(modelStatus = "Thinking...") }
+                    }
+                    return
+                }
+                if (response.reasoningToken.isNotEmpty()) {
+                    reasoningBuffer.append(response.reasoningToken)
+                    scheduleStreamFlush()
+                }
+                if (response.token.isNotEmpty()) {
+                    streamBuffer.append(response.token)
+                    scheduleStreamFlush()
                 }
             }
 
             response.isComplete -> {
+                flushBufferedStream()
                 val content = response.fullContent.ifBlank { _uiState.value.streamingToken }
                 val assistantMessage = Message(
                     id = response.messageId ?: "msg_${System.currentTimeMillis()}",
@@ -304,10 +397,16 @@ class ChatDetailViewModel @Inject constructor(
                     timestamp = System.currentTimeMillis()
                 )
                 _uiState.update { currentState ->
+                    val messages = currentState.messages + assistantMessage
                     currentState.copy(
-                        messages = currentState.messages + assistantMessage,
+                        messages = messages,
                         isGenerating = false,
                         streamingToken = "",
+                        reasoningToken = "",
+                        contextUsedTokens = estimateContext(
+                            messages,
+                            currentState.contextStartTimestamp
+                        ),
                         modelStatus = ""
                     )
                 }
@@ -322,8 +421,50 @@ class ChatDetailViewModel @Inject constructor(
         }
     }
 
+    private fun scheduleStreamFlush() {
+        if (streamFlushJob?.isActive == true) return
+        streamFlushJob = viewModelScope.launch {
+            delay(STREAM_FLUSH_INTERVAL_MS)
+            flushBufferedStream()
+        }
+    }
+
+    private fun flushBufferedStream() {
+        streamFlushJob?.cancel()
+        streamFlushJob = null
+        if (streamBuffer.isEmpty() && reasoningBuffer.isEmpty()) return
+
+        val answer = streamBuffer.toString()
+        val reasoning = reasoningBuffer.toString()
+        streamBuffer.clear()
+        reasoningBuffer.clear()
+
+        _uiState.update { currentState ->
+            val streamingToken = currentState.streamingToken + answer
+            val reasoningToken = currentState.reasoningToken + reasoning
+            currentState.copy(
+                streamingToken = streamingToken,
+                reasoningToken = reasoningToken,
+                modelStatus = when {
+                    streamingToken.isNotEmpty() -> ""
+                    reasoningToken.isNotEmpty() -> "Reasoning..."
+                    else -> currentState.modelStatus
+                }
+            )
+        }
+    }
+
+    private fun clearStreamingBuffers() {
+        streamBuffer.clear()
+        reasoningBuffer.clear()
+        streamFlushJob?.cancel()
+        streamFlushJob = null
+    }
+
     private suspend fun failGeneration(errorMessage: String?) {
+        flushBufferedStream()
         val partial = _uiState.value.streamingToken.trim()
+        clearStreamingBuffers()
 
         if (partial.isNotEmpty()) {
             runCatching { sendMessageUseCase.saveAssistantMessage(chatId, partial) }
@@ -347,6 +488,11 @@ class ChatDetailViewModel @Inject constructor(
                 messages = messages,
                 isGenerating = false,
                 streamingToken = "",
+                reasoningToken = "",
+                contextUsedTokens = estimateContext(
+                    messages,
+                    currentState.contextStartTimestamp
+                ),
                 modelStatus = "",
                 error = errorMessage
             )
@@ -360,21 +506,29 @@ class ChatDetailViewModel @Inject constructor(
 
         generationJob?.cancel()
         generationJob = null
+        flushBufferedStream()
 
-        val partial = state.streamingToken.trim()
+        val partial = _uiState.value.streamingToken.trim()
+        clearStreamingBuffers()
         if (partial.isNotEmpty()) {
             _uiState.update { currentState ->
+                val messages = currentState.messages + Message(
+                    id = "msg_${System.currentTimeMillis()}",
+                    chatId = chatId.toString(),
+                    content = partial,
+                    role = Message.Role.ASSISTANT,
+                    isPartial = true,
+                    timestamp = System.currentTimeMillis()
+                )
                 currentState.copy(
-                    messages = currentState.messages + Message(
-                        id = "msg_${System.currentTimeMillis()}",
-                        chatId = chatId.toString(),
-                        content = partial,
-                        role = Message.Role.ASSISTANT,
-                        isPartial = true,
-                        timestamp = System.currentTimeMillis()
-                    ),
+                    messages = messages,
                     isGenerating = false,
                     streamingToken = "",
+                    reasoningToken = "",
+                    contextUsedTokens = estimateContext(
+                        messages,
+                        currentState.contextStartTimestamp
+                    ),
                     modelStatus = ""
                 )
             }
@@ -386,6 +540,7 @@ class ChatDetailViewModel @Inject constructor(
                 it.copy(
                     isGenerating = false,
                     streamingToken = "",
+                    reasoningToken = "",
                     modelStatus = ""
                 )
             }
@@ -577,12 +732,26 @@ class ChatDetailViewModel @Inject constructor(
     override fun onCleared() {
         super.onCleared()
         generationJob?.cancel()
+        streamFlushJob?.cancel()
         voiceTimeoutJob?.cancel()
+        streamBuffer.clear()
+        reasoningBuffer.clear()
         voiceSessionActive = false
         voiceInputManager.release()
     }
 
+    private fun estimateContext(messages: List<Message>, startTimestamp: Long): Int {
+        if (startTimestamp <= 0) {
+            return TokenEstimator.estimateUiMessages(messages)
+        }
+        return TokenEstimator.estimateUiMessages(
+            messages.filter { it.timestamp > startTimestamp }
+        )
+    }
+
     companion object {
         private const val VOICE_TIMEOUT_MS = 8_000L
+        private const val STREAM_FLUSH_INTERVAL_MS = 55L
+        private const val DEFAULT_CONTEXT_WINDOW = 4096
     }
 }

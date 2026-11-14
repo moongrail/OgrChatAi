@@ -75,3 +75,8 @@ local.properties
 secrets.properties
 keystore.properties
 signing.properties
+
+# Local project notes, task state and temporary QA assets (never commit)
+*.local.md
+PROJECT_STATE.local.md
+.local-temp/

@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Monochrome dog constellation for themed icons -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:strokeWidth="3.0"
+        android:pathData="M31,51L42,45L39,32M42,45L49,34M42,45L51,56L61,59L70,54L77,64L79,69M77,64L74,74L69,82M61,59L54,68L49,82M54,68L66,76L69,82M79,69C82,68 84,64 85,56" />
+
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M39,30.5a1.8,1.8 0 1,0 3.6,0a1.8,1.8 0 1,0 -3.6,0zM49,32.5a1.8,1.8 0 1,0 3.6,0a1.8,1.8 0 1,0 -3.6,0zM51,54.3a1.9,1.9 0 1,0 3.8,0a1.9,1.9 0 1,0 -3.8,0zM61,57.1a2.0,2.0 0 1,0 4.0,0a2.0,2.0 0 1,0 -4.0,0zM70,52.0a2.0,2.0 0 1,0 4.0,0a2.0,2.0 0 1,0 -4.0,0zM77,62.0a1.9,1.9 0 1,0 3.8,0a1.9,1.9 0 1,0 -3.8,0zM79,67.2a1.9,1.9 0 1,0 3.8,0a1.9,1.9 0 1,0 -3.8,0zM74,72.2a1.7,1.7 0 1,0 3.4,0a1.7,1.7 0 1,0 -3.4,0zM69,80.2a1.9,1.9 0 1,0 3.8,0a1.9,1.9 0 1,0 -3.8,0zM54,66.2a1.8,1.8 0 1,0 3.6,0a1.8,1.8 0 1,0 -3.6,0zM49,80.2a1.9,1.9 0 1,0 3.8,0a1.9,1.9 0 1,0 -3.8,0zM66,74.2a1.7,1.7 0 1,0 3.4,0a1.7,1.7 0 1,0 -3.4,0z" />
+
+    <!-- Bright nose, eye and tail stars -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M31,44.8L32.4,49.6L37.2,51L32.4,52.4L31,57.2L29.6,52.4L24.8,51L29.6,49.6ZM42,40.8L43.0,44.0L46.2,45L43.0,46.0L42,49.2L41.0,46.0L37.8,45L41.0,44.0ZM85,50.8L86.0,54.0L89.2,55L86.0,56.0L85,59.2L84.0,56.0L80.8,55L84.0,54.0Z" />
+</vector>

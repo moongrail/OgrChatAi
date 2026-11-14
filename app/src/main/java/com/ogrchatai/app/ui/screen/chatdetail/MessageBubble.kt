@@ -6,6 +6,7 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.util.LruCache
 import android.widget.Toast
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -27,6 +28,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
@@ -36,13 +38,15 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.core.content.FileProvider
-import coil.compose.AsyncImage
-import coil.request.ImageRequest
+import coil3.compose.AsyncImage
+import coil3.request.ImageRequest
+import coil3.request.crossfade
 import com.ogrchatai.app.domain.model.Attachment
 import com.ogrchatai.app.domain.model.Message
 import java.io.File
-import java.text.SimpleDateFormat
-import java.util.*
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -60,6 +64,7 @@ fun MessageBubble(
     var showEditDialog by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
     var editText by remember(message.content) { mutableStateOf(message.content) }
+    val formattedTime = remember(message.timestamp) { formatMessageTime(message.timestamp) }
 
     val bubbleColor = when {
         isUser -> MaterialTheme.colorScheme.primaryContainer
@@ -153,7 +158,7 @@ fun MessageBubble(
                         )
                     }
                     Text(
-                        text = formatMessageTime(message.timestamp),
+                        text = formattedTime,
                         style = MaterialTheme.typography.labelSmall,
                         color = textColor.copy(alpha = 0.5f)
                     )
@@ -389,83 +394,8 @@ private fun RenderMarkdownText(
     textColor: Color,
     modifier: Modifier = Modifier
 ) {
-    val annotatedString = buildAnnotatedString {
-        var i = 0
-        while (i < text.length) {
-            when {
-                text.startsWith("**", i) -> {
-                    val end = text.indexOf("**", i + 2)
-                    if (end != -1) {
-                        withStyle(SpanStyle(fontWeight = FontWeight.Bold)) {
-                            append(text.substring(i + 2, end))
-                        }
-                        i = end + 2
-                    } else {
-                        append(text[i])
-                        i++
-                    }
-                }
-
-                text.startsWith("*", i) && !text.startsWith("**", i) -> {
-                    val end = text.indexOf("*", i + 1)
-                    if (end != -1 && !text.startsWith("**", end)) {
-                        withStyle(SpanStyle(fontStyle = FontStyle.Italic)) {
-                            append(text.substring(i + 1, end))
-                        }
-                        i = end + 1
-                    } else {
-                        append(text[i])
-                        i++
-                    }
-                }
-
-                text.startsWith("```", i) -> {
-                    val end = text.indexOf("```", i + 3)
-                    if (end != -1) {
-                        val code = text.substring(i + 3, end).trim()
-                        append("\n")
-                        withStyle(
-                            SpanStyle(
-                                fontFamily = FontFamily.Monospace,
-                                fontSize = 13.sp,
-                                background = Color.Black.copy(alpha = 0.1f)
-                            )
-                        ) {
-                            append(code)
-                        }
-                        append("\n")
-                        i = end + 3
-                    } else {
-                        append(text[i])
-                        i++
-                    }
-                }
-
-                text.startsWith("`", i) -> {
-                    val end = text.indexOf("`", i + 1)
-                    if (end != -1) {
-                        withStyle(
-                            SpanStyle(
-                                fontFamily = FontFamily.Monospace,
-                                fontSize = 13.sp,
-                                background = Color.Black.copy(alpha = 0.1f)
-                            )
-                        ) {
-                            append(text.substring(i + 1, end))
-                        }
-                        i = end + 1
-                    } else {
-                        append(text[i])
-                        i++
-                    }
-                }
-
-                else -> {
-                    append(text[i])
-                    i++
-                }
-            }
-        }
+    val annotatedString = remember(text) {
+        markdownCache.get(text) ?: parseMarkdown(text).also { markdownCache.put(text, it) }
     }
 
     Text(
@@ -476,6 +406,85 @@ private fun RenderMarkdownText(
     )
 }
 
+private fun parseMarkdown(text: String): AnnotatedString = buildAnnotatedString {
+    var i = 0
+    while (i < text.length) {
+        when {
+            text.startsWith("**", i) -> {
+                val end = text.indexOf("**", i + 2)
+                if (end != -1) {
+                    withStyle(SpanStyle(fontWeight = FontWeight.Bold)) {
+                        append(text.substring(i + 2, end))
+                    }
+                    i = end + 2
+                } else {
+                    append(text[i])
+                    i++
+                }
+            }
+
+            text.startsWith("*", i) && !text.startsWith("**", i) -> {
+                val end = text.indexOf("*", i + 1)
+                if (end != -1 && !text.startsWith("**", end)) {
+                    withStyle(SpanStyle(fontStyle = FontStyle.Italic)) {
+                        append(text.substring(i + 1, end))
+                    }
+                    i = end + 1
+                } else {
+                    append(text[i])
+                    i++
+                }
+            }
+
+            text.startsWith("```", i) -> {
+                val end = text.indexOf("```", i + 3)
+                if (end != -1) {
+                    val code = text.substring(i + 3, end).trim()
+                    append("\n")
+                    withStyle(
+                        SpanStyle(
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 13.sp,
+                            background = Color.Black.copy(alpha = 0.1f)
+                        )
+                    ) {
+                        append(code)
+                    }
+                    append("\n")
+                    i = end + 3
+                } else {
+                    append(text[i])
+                    i++
+                }
+            }
+
+            text.startsWith("`", i) -> {
+                val end = text.indexOf("`", i + 1)
+                if (end != -1) {
+                    withStyle(
+                        SpanStyle(
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 13.sp,
+                            background = Color.Black.copy(alpha = 0.1f)
+                        )
+                    ) {
+                        append(text.substring(i + 1, end))
+                    }
+                    i = end + 1
+                } else {
+                    append(text[i])
+                    i++
+                }
+            }
+
+            else -> {
+                append(text[i])
+                i++
+            }
+        }
+    }
+}
+
 private fun copyToClipboard(context: Context, text: String) {
     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
     val clip = ClipData.newPlainText("Message", text)
@@ -483,6 +492,10 @@ private fun copyToClipboard(context: Context, text: String) {
 }
 
 private fun formatMessageTime(timestamp: Long): String {
-    val sdf = SimpleDateFormat("HH:mm", Locale.getDefault())
-    return sdf.format(Date(timestamp))
+    return Instant.ofEpochMilli(timestamp)
+        .atZone(ZoneId.systemDefault())
+        .format(TIME_FORMATTER)
 }
+
+private val TIME_FORMATTER: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
+private val markdownCache = LruCache<String, AnnotatedString>(32)

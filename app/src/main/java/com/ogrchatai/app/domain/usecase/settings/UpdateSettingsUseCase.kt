@@ -29,6 +29,8 @@ class UpdateSettingsUseCase @Inject constructor(
             )
             modelRepository.updateGenerationConfig(settings.generationConfig)
             userPreferences.setVoiceGender(settings.voiceGender)
+            userPreferences.setTtsEngine(settings.ttsEngine)
+            userPreferences.setTtsVoice(settings.ttsVoice)
 
             if (clearHistory) {
                 withContext(Dispatchers.IO) {

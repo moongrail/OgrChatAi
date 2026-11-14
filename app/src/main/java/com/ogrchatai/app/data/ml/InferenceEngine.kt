@@ -3,12 +3,17 @@ package com.ogrchatai.app.data.ml
 import android.content.Context
 import android.util.Log
 import com.hazratbilal.aikit.core.AiKitEngine
-import com.hazratbilal.aikit.chat.chat
+import com.hazratbilal.aikit.core.InternalAiKitApi
+import com.hazratbilal.aikit.core.model.LlmRequest
+import com.ogrchatai.app.util.ReasoningTagParser
+import com.ogrchatai.app.util.TokenEstimator
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -25,10 +30,17 @@ class InferenceEngine @Inject constructor(
 ) {
 
     private var aiKitEngine: AiKitEngine? = null
-    private var aiKitChat: com.hazratbilal.aikit.chat.AiKitChat? = null
     private val isGenerating = AtomicBoolean(false)
     private val loadMutex = Mutex()
     private var currentModelId: String? = null
+    private var activeGenerationJob: Job? = null
+
+    private var activeConversationKey: String? = null
+    private var conversationModelId: String? = null
+    private var conversationSystemPrompt: String? = null
+    private var conversationTokens: Int = 0
+    private var conversationInitialized: Boolean = false
+    private var conversationResetRequested: Boolean = false
 
     data class GenerationConfig(
         val maxTokens: Int = 512,
@@ -37,13 +49,16 @@ class InferenceEngine @Inject constructor(
         val topK: Int = 40,
         val repeatPenalty: Float = 1.1f,
         val stopSequences: List<String> = emptyList(),
+        val expectImplicitReasoning: Boolean = false,
+        val contextSize: Int = 8192,
         val stream: Boolean = true
     )
 
     data class StreamToken(
         val text: String,
         val tokenId: Int,
-        val probability: Float
+        val probability: Float,
+        val isReasoning: Boolean = false
     )
 
     data class LoadedModel(
@@ -82,12 +97,7 @@ class InferenceEngine @Inject constructor(
                     if (currentModelId != null && currentModelId != modelId) {
                         Log.d(TAG, "Switching model: $currentModelId -> $modelId")
                         if (isGenerating.get()) {
-                            try {
-                                aiKitChat?.cancelGeneration()
-                            } catch (_: Exception) {
-                                // Ignore cancellation errors while switching.
-                            }
-                            isGenerating.set(false)
+                            cancelGeneration()
                         }
                         try {
                             aiKitEngine?.unloadModel()
@@ -95,9 +105,9 @@ class InferenceEngine @Inject constructor(
                             // The old engine may already be released.
                         }
                         aiKitEngine = null
-                        aiKitChat = null
                         currentModelId = null
                         loadedModels.clear()
+                        clearConversationState()
                     }
 
                     Log.d(TAG, "Loading model via AiKit: $modelId from $filePath (${file.length() / (1024 * 1024)}MB)")
@@ -111,9 +121,6 @@ class InferenceEngine @Inject constructor(
                         Log.e(TAG, "AiKit loadModel failed: ${loadResult.exceptionOrNull()?.message}")
                         return@withContext Result.failure(loadResult.exceptionOrNull()!!)
                     }
-
-                    val chat = engine.chat()
-                    aiKitChat = chat
 
                     val loadedModel = LoadedModel(
                         modelId = modelId,
@@ -165,108 +172,169 @@ class InferenceEngine @Inject constructor(
         })
     }
 
+    @OptIn(InternalAiKitApi::class)
     fun generateTextStream(
         modelId: String,
         prompt: String,
         systemPrompt: String = "You are a helpful assistant.",
-        config: GenerationConfig = GenerationConfig()
-    ): Flow<StreamToken> = callbackFlow {
-        val chat = aiKitChat
-        if (chat == null) {
-            close(IllegalStateException("Model not loaded: $modelId"))
-            return@callbackFlow
+        config: GenerationConfig = GenerationConfig(),
+        conversationKey: String = "default",
+        contextSeed: String = "",
+        forceReset: Boolean = false
+    ): Flow<StreamToken> = flow {
+        val engine = aiKitEngine
+            ?: throw IllegalStateException("Model not loaded: $modelId")
+
+        if (!isGenerating.compareAndSet(false, true)) {
+            throw IllegalStateException("Another generation is in progress")
         }
 
-        if (isGenerating.get()) {
-            close(IllegalStateException("Another generation is in progress"))
-            return@callbackFlow
-        }
+        val generationJob = currentCoroutineContext()[Job]
+        activeGenerationJob = generationJob
 
-        isGenerating.set(true)
         loadedModels[modelId]?.let {
             it.lastUsedAt = System.currentTimeMillis()
             it.isInUse = true
         }
 
-        var tokenCount = 0
-        var insideThinkTag = false
-        val thinkBuffer = StringBuilder()
-
-        try {
-            chat.sendMessage(
-                prompt,
-                config.maxTokens,
-                systemPrompt.ifBlank { "You are a helpful assistant." },
-                object : com.hazratbilal.aikit.chat.AiKitChat.ChatListener {
-                    override fun onGenerationStarted() {
-                        Log.d(TAG, "Generation started")
-                    }
-
-                    override fun onToken(token: String) {
-                        tokenCount++
-
-                        if (token.contains("<think>")) {
-                            insideThinkTag = true
-                        }
-
-                        if (insideThinkTag) {
-                            thinkBuffer.append(token)
-                            if (token.contains("</think>")) {
-                                insideThinkTag = false
-                                thinkBuffer.clear()
-                            }
-                            return
-                        }
-
-                        trySend(
-                            StreamToken(
-                                text = token,
-                                tokenId = tokenCount,
-                                probability = 1.0f
-                            )
-                        )
-                    }
-
-                    override fun onGenerationComplete(fullResponse: String) {
-                        Log.d(TAG, "Generation complete: ${fullResponse.length} chars, $tokenCount tokens")
-                        isGenerating.set(false)
-                        loadedModels[modelId]?.isInUse = false
-                        close()
-                    }
-
-                    override fun onGenerationError(error: Throwable) {
-                        Log.e(TAG, "Generation error", error)
-                        isGenerating.set(false)
-                        loadedModels[modelId]?.isInUse = false
-                        close(error)
-                    }
-
-                    override fun onCancelled() {
-                        Log.d(TAG, "Generation cancelled")
-                        isGenerating.set(false)
-                        loadedModels[modelId]?.isInUse = false
-                        close()
-                    }
-                }
-            )
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to start generation", e)
-            isGenerating.set(false)
-            loadedModels[modelId]?.isInUse = false
-            close(e)
+        val contextSize = config.contextSize.coerceIn(MIN_CONTEXT_SIZE, MAX_CONTEXT_SIZE)
+        val key = conversationKey.ifBlank { "default:$modelId" }
+        val projectedTokens = conversationTokens + TokenEstimator.estimate(prompt)
+        val sessionChanged = !conversationInitialized ||
+            activeConversationKey != key ||
+            conversationModelId != modelId ||
+            conversationSystemPrompt != systemPrompt
+        val overBudget = projectedTokens > (contextSize * COMPACT_AT_RATIO).toInt()
+        val needsReset = forceReset || conversationResetRequested || sessionChanged || overBudget
+        val requestPrompt = if (needsReset && contextSeed.isNotBlank()) {
+            // Put the boundary instruction in the current user turn as well. The
+            // model follows the closest, most specific instruction much more
+            // reliably than a rule buried in a long system prompt.
+            buildString {
+                appendLine("[New user message]")
+                appendLine(prompt.trim())
+                appendLine("[End of new user message]")
+                appendLine()
+                append(CURRENT_TURN_ONLY_RULES)
+            }
+        } else {
+            prompt
         }
 
-        awaitClose {
-            if (isGenerating.get()) {
-                chat.cancelGeneration()
-                isGenerating.set(false)
-                loadedModels[modelId]?.isInUse = false
+        var appliedSystemPrompt: String? = null
+        if (needsReset) {
+            if (conversationInitialized && engine.isModelLoaded()) {
+                Log.d(TAG, "Compacting conversation context for $key")
+                engine.modelManager.resetConversation()
             }
+            val seed = if (contextSeed.isBlank()) {
+                systemPrompt.trim()
+            } else {
+                buildString {
+                    append(systemPrompt.trim())
+                    appendLine()
+                    appendLine()
+                    append(contextSeed.trim())
+                    appendLine()
+                    appendLine()
+                    append(BACKGROUND_ONLY_RULES)
+                }.trim()
+            }
+            appliedSystemPrompt = seed.ifBlank { null }
+            activeConversationKey = key
+            conversationModelId = modelId
+            conversationSystemPrompt = systemPrompt
+            conversationTokens = TokenEstimator.estimate(seed) +
+                TokenEstimator.estimate(requestPrompt) +
+                CHAT_TEMPLATE_OVERHEAD_TOKENS
+            conversationInitialized = true
+            conversationResetRequested = false
+            Log.d(
+                TAG,
+                "Seeded conversation $key: ~$conversationTokens tokens " +
+                    "(seed=${TokenEstimator.estimate(contextSeed)})"
+            )
+        } else {
+            conversationTokens += TokenEstimator.estimate(prompt) + CHAT_TEMPLATE_OVERHEAD_TOKENS
+        }
+
+        var tokenCount = 0
+        val responseBuilder = StringBuilder()
+        val reasoningParser = ReasoningTagParser(
+            expectImplicitReasoning = config.expectImplicitReasoning
+        )
+
+        suspend fun emitParsedChunks(chunks: List<ReasoningTagParser.Chunk>) {
+            chunks.forEach { chunk ->
+                if (chunk.text.isEmpty()) return@forEach
+                emit(
+                    StreamToken(
+                        text = chunk.text,
+                        tokenId = tokenCount,
+                        probability = 1.0f,
+                        isReasoning = chunk.isReasoning
+                    )
+                )
+            }
+        }
+
+        try {
+            // The wrapper sends every prompt as a single user turn and applies the
+            // model's chat template. Keeping the previous turns inside that user
+            // turn made small models repeat the last answer. We therefore send only
+            // the new user message on each turn and let llama.cpp's KV cache hold
+            // the dialogue. When the cache approaches the context limit (or the
+            // chat/memory changes), the cache is reset and a compressed context is
+            // supplied through the system prompt instead.
+            val request = LlmRequest(
+                prompt = requestPrompt,
+                systemPrompt = appliedSystemPrompt,
+                maxTokens = config.maxTokens.coerceAtLeast(1),
+                temperature = config.temperature.coerceIn(0f, 2f)
+            )
+
+            engine.modelManager.generateStreaming(request).collect { token ->
+                tokenCount++
+                responseBuilder.append(token)
+                emitParsedChunks(reasoningParser.process(token))
+            }
+            emitParsedChunks(reasoningParser.finish())
+
+            conversationTokens += TokenEstimator.estimate(responseBuilder.toString())
+            Log.d(TAG, "Generation complete: $tokenCount tokens, context ~$conversationTokens")
+        } finally {
+            isGenerating.set(false)
+            loadedModels[modelId]?.isInUse = false
+            if (activeGenerationJob === generationJob) {
+                activeGenerationJob = null
+            }
+        }
+    }.flowOn(Dispatchers.Default)
+
+    /**
+     * Marks the current conversation cache as stale, for example after the user
+     * clears memory or edits/deletes an earlier message.
+     */
+    fun invalidateConversation(key: String? = null) {
+        if (key == null || activeConversationKey == key) {
+            conversationResetRequested = true
+            conversationTokens = 0
+            Log.d(TAG, "Conversation cache invalidated for ${key ?: activeConversationKey}")
         }
     }
 
+    private fun clearConversationState() {
+        activeConversationKey = null
+        conversationModelId = null
+        conversationSystemPrompt = null
+        conversationTokens = 0
+        conversationInitialized = false
+        conversationResetRequested = false
+    }
+
     fun cancelGeneration() {
-        aiKitChat?.cancelGeneration()
+        activeGenerationJob?.cancel()
+        activeGenerationJob = null
         isGenerating.set(false)
         loadedModels.values.forEach { it.isInUse = false }
     }
@@ -275,8 +343,8 @@ class InferenceEngine @Inject constructor(
         if (currentModelId == modelId) {
             aiKitEngine?.unloadModel()
             aiKitEngine = null
-            aiKitChat = null
             currentModelId = null
+            clearConversationState()
         }
         loadedModels.remove(modelId)
         Log.i(TAG, "Model unloaded: $modelId")
@@ -284,12 +352,7 @@ class InferenceEngine @Inject constructor(
 
     fun unloadAllModels() {
         if (isGenerating.get()) {
-            try {
-                aiKitChat?.cancelGeneration()
-            } catch (_: Exception) {
-                // Ignore cancellation errors during shutdown.
-            }
-            isGenerating.set(false)
+            cancelGeneration()
         }
         try {
             aiKitEngine?.unloadModel()
@@ -297,9 +360,9 @@ class InferenceEngine @Inject constructor(
             // Ignore unload errors during shutdown.
         }
         aiKitEngine = null
-        aiKitChat = null
         currentModelId = null
         loadedModels.clear()
+        clearConversationState()
         Log.i(TAG, "All models unloaded")
     }
 
@@ -309,5 +372,26 @@ class InferenceEngine @Inject constructor(
 
     companion object {
         private const val TAG = "InferenceEngine"
+        private const val MIN_CONTEXT_SIZE = 1024
+        private const val MAX_CONTEXT_SIZE = 8192
+        private const val COMPACT_AT_RATIO = 0.68
+        private const val CHAT_TEMPLATE_OVERHEAD_TOKENS = 32
+
+        /**
+         * Appended after every seeded background context. Without this explicit
+         * boundary, small models often treat the last assistant message in the
+         * seed as something to continue, especially when the new message is
+         * also a greeting.
+         */
+        private const val BACKGROUND_ONLY_RULES =
+            "[End of background context]\n" +
+                "The conversation above is reference-only history, not the current turn. " +
+                "Do not continue, repeat, quote, summarize, or paraphrase it. " +
+                "The next user message is a new request: answer it directly and freshly."
+
+        private const val CURRENT_TURN_ONLY_RULES =
+            "[Instruction: the earlier conversation is background context only. " +
+                "Do not continue, repeat, or copy the previous assistant reply. " +
+                "Answer only the user request above as a new, fresh turn.]"
     }
 }

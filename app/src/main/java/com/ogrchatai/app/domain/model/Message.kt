@@ -28,6 +28,7 @@ data class MessageAttachment(
 data class SendMessageResponse(
     val isStreaming: Boolean = false,
     val token: String = "",
+    val reasoningToken: String = "",
     val isComplete: Boolean = false,
     val fullContent: String = "",
     val messageId: String? = null,

@@ -23,6 +23,12 @@ interface ChatRepository {
     suspend fun searchChats(query: String): List<Chat>
 
     /**
+     * Stops sending messages older than [clearedAt] to the model while keeping
+     * the visible chat history intact.
+     */
+    suspend fun clearChatMemory(chatId: Long, clearedAt: Long)
+
+    /**
      * Encrypts text and attachment metadata of messages written by older app versions and
      * removes the plaintext copies from the database.
      */

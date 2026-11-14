@@ -18,10 +18,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Brightness6
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.DeleteForever
 import androidx.compose.material.icons.filled.DeleteSweep
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Memory
@@ -32,22 +34,32 @@ import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.filled.Straighten
 import androidx.compose.material.icons.filled.Thermostat
 import androidx.compose.material.icons.filled.Token
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LargeTopAppBar
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -59,15 +71,18 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.ogrchatai.app.domain.model.Language
 import com.ogrchatai.app.domain.model.ThemeMode
+import com.ogrchatai.app.domain.model.TtsEngine
+import com.ogrchatai.app.domain.model.TtsVoice
 import com.ogrchatai.app.domain.model.VoiceGender
 import com.ogrchatai.app.ui.components.ConfirmDialog
 import com.ogrchatai.app.ui.components.LoadingIndicator
 import com.ogrchatai.app.ui.components.SectionHeader
 import com.ogrchatai.app.ui.components.SettingsItem
 import com.ogrchatai.app.ui.viewmodel.SettingsAction
+import com.ogrchatai.app.ui.viewmodel.SettingsEvent
 import com.ogrchatai.app.ui.viewmodel.SettingsViewModel
 import kotlin.math.roundToInt
 
@@ -80,6 +95,8 @@ fun SettingsScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     var showClearDialog by remember { mutableStateOf(false) }
+    var showVoiceLicenseDialog by remember { mutableStateOf(false) }
+    val snackbarHostState = remember { SnackbarHostState() }
     var tempTemperature by remember(uiState.generationConfig.temperature) {
         mutableFloatStateOf(uiState.generationConfig.temperature)
     }
@@ -88,6 +105,29 @@ fun SettingsScreen(
     }
     var tempMaxTokens by remember(uiState.generationConfig.maxTokens) {
         mutableIntStateOf(uiState.generationConfig.maxTokens)
+    }
+
+    LaunchedEffect(Unit) {
+        viewModel.events.collect { event ->
+            when (event) {
+                is SettingsEvent.ShowError -> snackbarHostState.showSnackbar(
+                    event.message,
+                    duration = SnackbarDuration.Short
+                )
+                is SettingsEvent.ShowMessage -> snackbarHostState.showSnackbar(
+                    event.message,
+                    duration = SnackbarDuration.Short
+                )
+                SettingsEvent.SettingsSaved -> snackbarHostState.showSnackbar(
+                    "Settings saved",
+                    duration = SnackbarDuration.Short
+                )
+                SettingsEvent.HistoryCleared -> snackbarHostState.showSnackbar(
+                    "Chat history and downloaded models were cleared",
+                    duration = SnackbarDuration.Short
+                )
+            }
+        }
     }
 
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
@@ -107,8 +147,39 @@ fun SettingsScreen(
         )
     }
 
+    if (showVoiceLicenseDialog) {
+        AlertDialog(
+            onDismissRequest = { showVoiceLicenseDialog = false },
+            title = { Text("Download neural voices?") },
+            text = {
+                Text(
+                    "Supertonic 3 provides 10 expressive voices and works fully on-device. " +
+                        "The download is about 123 MB; extracted files need about 300 MB of free " +
+                        "storage. The model is licensed under OpenRAIL-M. By downloading you agree " +
+                        "to that model license. Audio is generated locally and never uploaded."
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showVoiceLicenseDialog = false
+                        viewModel.onAction(SettingsAction.DownloadNeuralVoice)
+                    }
+                ) {
+                    Text("Download")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showVoiceLicenseDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
     Scaffold(
         modifier = Modifier,
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             LargeTopAppBar(
                 title = {
@@ -250,12 +321,168 @@ fun SettingsScreen(
                                 tint = MaterialTheme.colorScheme.primary
                             )
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = "Assistant voice",
-                                style = MaterialTheme.typography.bodyLarge,
-                                fontWeight = FontWeight.Medium
-                            )
+                            Column {
+                                Text(
+                                    text = "Neural voice · Supertonic 3",
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Text(
+                                    text = "10 emotional voices · 5 languages · on-device",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Text(
+                                    text = com.ogrchatai.app.domain.model.TtsLanguages.displayList,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
                         }
+
+                        TtsEngine.entries.forEach { engine ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 2.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                RadioButton(
+                                    selected = uiState.ttsEngine == engine,
+                                    onClick = {
+                                        viewModel.onAction(SettingsAction.UpdateTtsEngine(engine))
+                                    },
+                                    colors = RadioButtonDefaults.colors(
+                                        selectedColor = MaterialTheme.colorScheme.primary
+                                    )
+                                )
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Text(
+                                    text = when (engine) {
+                                        TtsEngine.AUTO -> "Neural when available (recommended)"
+                                        TtsEngine.SYSTEM -> "System speech engine"
+                                    },
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Text(
+                            text = "Neural voice",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.padding(horizontal = 16.dp)
+                        )
+                        VoiceSelector(
+                            selectedVoice = uiState.ttsVoice,
+                            onVoiceSelected = {
+                                viewModel.onAction(SettingsAction.UpdateTtsVoice(it))
+                            }
+                        )
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        val status = uiState.neuralVoice
+                        when {
+                            status.isDownloading || status.isExtracting -> {
+                                Column(
+                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                                ) {
+                                    LinearProgressIndicator(
+                                        progress = {
+                                            if (status.isExtracting) 0.99f
+                                            else status.progress.coerceIn(0f, 1f)
+                                        },
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                    Text(
+                                        text = if (status.isExtracting) {
+                                            "Unpacking the voice model…"
+                                        } else {
+                                            "Downloading voices… ${(status.progress * 100).roundToInt()}%"
+                                        },
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+
+                            status.isInstalled -> {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 16.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "Installed and ready for offline use",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                    OutlinedButton(
+                                        onClick = {
+                                            viewModel.onAction(SettingsAction.DeleteNeuralVoice)
+                                        }
+                                    ) {
+                                        Text("Remove")
+                                    }
+                                }
+                            }
+
+                            else -> {
+                                Column(
+                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                                ) {
+                                    Text(
+                                        text = "Download once (~123 MB) for natural, expressive " +
+                                            "speech. The system voice is used until the pack is ready.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Button(
+                                        onClick = { showVoiceLicenseDialog = true },
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Filled.Download,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text("Download neural voices")
+                                    }
+                                    status.error?.let { error ->
+                                        Spacer(modifier = Modifier.height(6.dp))
+                                        Text(
+                                            text = error,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.error
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        Text(
+                            text = "System fallback voice",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.padding(horizontal = 16.dp)
+                        )
+                        Text(
+                            text = "Used when the neural model is not installed or unavailable.",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 16.dp)
+                        )
 
                         VoiceGender.entries.forEach { gender ->
                             Row(
@@ -499,4 +726,126 @@ fun SettingsScreen(
             }
         }
     }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun VoiceSelector(
+    selectedVoice: TtsVoice,
+    onVoiceSelected: (TtsVoice) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+
+    ExposedDropdownMenuBox(
+        expanded = expanded,
+        onExpandedChange = { expanded = it },
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 4.dp)
+    ) {
+        Surface(
+            modifier = Modifier
+                .menuAnchor()
+                .fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = selectedVoice.displayName,
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = selectedVoice.description,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Icon(
+                    imageVector = Icons.Filled.ArrowDropDown,
+                    contentDescription = "Choose voice",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
+        ExposedDropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false }
+        ) {
+            Text(
+                text = "Female voices",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 16.dp, top = 10.dp, bottom = 4.dp)
+            )
+            TtsVoice.entries.filter { it.gender == VoiceGender.FEMALE }.forEach { voice ->
+                VoiceMenuItem(
+                    voice = voice,
+                    selected = selectedVoice == voice,
+                    onClick = {
+                        onVoiceSelected(voice)
+                        expanded = false
+                    }
+                )
+            }
+            HorizontalDivider()
+            Text(
+                text = "Male voices",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 16.dp, top = 10.dp, bottom = 4.dp)
+            )
+            TtsVoice.entries.filter { it.gender == VoiceGender.MALE }.forEach { voice ->
+                VoiceMenuItem(
+                    voice = voice,
+                    selected = selectedVoice == voice,
+                    onClick = {
+                        onVoiceSelected(voice)
+                        expanded = false
+                    }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun VoiceMenuItem(
+    voice: TtsVoice,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    DropdownMenuItem(
+        text = {
+            Column {
+                Text(
+                    text = voice.displayName,
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal
+                )
+                Text(
+                    text = voice.description,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        },
+        onClick = onClick,
+        leadingIcon = {
+            RadioButton(
+                selected = selected,
+                onClick = null,
+                colors = RadioButtonDefaults.colors(
+                    selectedColor = MaterialTheme.colorScheme.primary
+                )
+            )
+        }
+    )
 }

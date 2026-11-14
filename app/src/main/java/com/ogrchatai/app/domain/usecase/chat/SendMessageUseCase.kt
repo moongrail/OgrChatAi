@@ -6,9 +6,13 @@ import com.ogrchatai.app.domain.model.Attachment
 import com.ogrchatai.app.domain.model.ChatMessage
 import com.ogrchatai.app.domain.model.GenerationConfig
 import com.ogrchatai.app.domain.model.MessageRole
+import com.ogrchatai.app.domain.model.ReasoningMode
 import com.ogrchatai.app.domain.model.SendMessageResponse
 import com.ogrchatai.app.domain.repository.ChatRepository
 import com.ogrchatai.app.domain.repository.ModelRepository
+import com.ogrchatai.app.util.ContextInput
+import com.ogrchatai.app.util.ConversationContextBuilder
+import com.ogrchatai.app.util.TokenEstimator
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
@@ -56,19 +60,65 @@ class SendMessageUseCase @Inject constructor(
         }
 
         val modelSettings = modelRepository.getModelSettingsOnce(usedModelId)
-        val effectiveSystemPrompt = modelSettings.systemPrompt.ifBlank {
-            config.systemPrompt.ifBlank { com.ogrchatai.app.domain.model.GenerationConfig.DEFAULT_SYSTEM_PROMPT }
-        }
+        val reasoningMode = modelSettings.effectiveReasoningMode
+        val isQwen3 = isQwen3Model(usedModelId)
+        val effectiveSystemPrompt = buildSystemPrompt(
+            configuredPrompt = modelSettings.systemPrompt.ifBlank {
+                config.systemPrompt.ifBlank {
+                    com.ogrchatai.app.domain.model.GenerationConfig.DEFAULT_SYSTEM_PROMPT
+                }
+            },
+            reasoningMode = reasoningMode,
+            isQwen3 = isQwen3
+        )
 
-        val prompt = buildPrompt(messages)
+        val outputReserve = modelSettings.maxTokens.coerceAtMost(modelSettings.contextSize / 2)
+        val effectiveContextSize = modelSettings.contextSize.coerceIn(1024, 8192)
+        val promptBudget = (
+            effectiveContextSize -
+                outputReserve -
+                TokenEstimator.estimate(effectiveSystemPrompt) -
+                PROMPT_OVERHEAD_TOKENS
+            ).coerceAtLeast(MIN_PROMPT_TOKENS)
+
+        // The latest user turn is sent separately. Older turns are compressed into
+        // a compact context seed that is only used when the KV cache is reset.
+        // Keep the seed from ending with an assistant message: tiny models often
+        // treat that as a reply to continue and copy it instead of answering the
+        // new user turn.
+        val priorMessages = messages
+            .dropLast(1)
+            .dropLastWhile { it.role == MessageRole.ASSISTANT }
+        val contextInputs = priorMessages.map { message ->
+            val formatted = formatMessageWithAttachments(message)
+            ContextInput(
+                message = message,
+                formatted = formatted,
+                tokens = TokenEstimator.estimate(formatted)
+            )
+        }
+        val context = ConversationContextBuilder.build(
+            messages = contextInputs,
+            currentQuery = content,
+            budgetTokens = promptBudget,
+            memoryClearedAt = chat.memoryClearedAt
+        )
+        val userPrompt = buildCurrentUserPrompt(
+            content = content,
+            attachments = attachments,
+            reasoningMode = reasoningMode,
+            isQwen3 = isQwen3
+        )
 
         val genConfig = InferenceEngine.GenerationConfig(
-            maxTokens = config.maxTokens,
-            temperature = config.temperature,
-            topP = config.topP,
-            topK = config.topK,
-            repeatPenalty = config.repeatPenalty,
-            stopSequences = config.stopSequences
+            maxTokens = modelSettings.maxTokens,
+            temperature = modelSettings.temperature,
+            topP = modelSettings.topP,
+            topK = modelSettings.topK,
+            repeatPenalty = modelSettings.repeatPenalty,
+            stopSequences = config.stopSequences,
+            expectImplicitReasoning = isQwen3 && reasoningMode != ReasoningMode.OFF,
+            contextSize = effectiveContextSize
         )
 
         return callbackFlow {
@@ -82,12 +132,32 @@ class SendMessageUseCase @Inject constructor(
                     return@callbackFlow
                 }
 
-                trySend(Result.success(SendMessageResponse(token = "")))
+                trySend(Result.success(SendMessageResponse(isStreaming = true, token = "")))
 
-                val stream = inferenceEngine.generateTextStream(usedModelId, prompt, effectiveSystemPrompt, genConfig)
+                val stream = inferenceEngine.generateTextStream(
+                    modelId = usedModelId,
+                    prompt = userPrompt,
+                    systemPrompt = effectiveSystemPrompt,
+                    config = genConfig,
+                    conversationKey = "chat:$chatId",
+                    contextSeed = context.contextText
+                )
                 val sb = StringBuilder()
 
                 stream.collect { token ->
+                    if (token.isReasoning) {
+                        if (reasoningMode != ReasoningMode.OFF && token.text.isNotEmpty()) {
+                            trySend(
+                                Result.success(
+                                    SendMessageResponse(
+                                        isStreaming = true,
+                                        reasoningToken = token.text
+                                    )
+                                )
+                            )
+                        }
+                        return@collect
+                    }
                     sb.append(token.text)
                     trySend(Result.success(
                         SendMessageResponse(
@@ -123,23 +193,81 @@ class SendMessageUseCase @Inject constructor(
         }
     }
 
-    private fun buildPrompt(messages: List<ChatMessage>): String {
-        val recentMessages = messages.takeLast(MAX_HISTORY_MESSAGES)
-        val blocks = recentMessages.map { formatMessageWithAttachments(it) }
+    private fun buildCurrentUserPrompt(
+        content: String,
+        attachments: List<Attachment>,
+        reasoningMode: ReasoningMode,
+        isQwen3: Boolean
+    ): String {
+        val sb = StringBuilder(content.trim())
+        attachments.forEach { attachment ->
+            if (sb.isNotEmpty()) sb.append('\n')
+            sb.append("[Attached file: ")
+                .append(attachment.fileName)
+                .append(" | ")
+                .append(attachment.mimeType)
+                .append(" | ")
+                .append(attachment.formattedSize)
+                .append("]")
 
-        // Keep the newest messages when the prompt is too large for the model context.
-        val selectedBlocks = mutableListOf<String>()
-        var usedChars = 0
-        for (block in blocks.asReversed()) {
-            val remaining = MAX_PROMPT_CHARS - usedChars
-            if (remaining <= 0) break
-
-            val clipped = if (block.length > remaining) block.take(remaining) else block
-            selectedBlocks.add(0, clipped)
-            usedChars += clipped.length + 1
+            val attachmentContent = attachment.content?.trim()
+            if (!attachmentContent.isNullOrBlank()) {
+                sb.append("\n<<<FILE CONTENT START>>>\n")
+                    .append(attachmentContent.take(MAX_ATTACHMENT_TEXT_CHARS))
+                if (attachmentContent.length > MAX_ATTACHMENT_TEXT_CHARS) {
+                    sb.append("\n[... file content truncated]")
+                }
+                sb.append("\n<<<FILE CONTENT END>>>")
+            } else if (attachment.isImage) {
+                sb.append(
+                    "\n[Image attachment. This model works with text only, " +
+                        "so the image itself is not available. Ask the user for a description if needed.]"
+                )
+            } else {
+                sb.append(
+                    "\n[Binary attachment. Text could not be extracted from this file; " +
+                        "the file name and metadata are available to you.]"
+                )
+            }
         }
 
-        return selectedBlocks.joinToString("\n").trim()
+        if (sb.isBlank()) {
+            return "Please review the attached file."
+        }
+
+        if (isQwen3) {
+            when (reasoningMode) {
+                ReasoningMode.OFF -> sb.append("\n/no_think")
+                ReasoningMode.ON -> sb.append("\n/think")
+                ReasoningMode.AUTO -> Unit
+            }
+        }
+        return sb.toString()
+    }
+
+    private fun buildSystemPrompt(
+        configuredPrompt: String,
+        reasoningMode: ReasoningMode,
+        isQwen3: Boolean
+    ): String {
+        return when (reasoningMode) {
+            ReasoningMode.AUTO -> configuredPrompt
+            ReasoningMode.ON -> configuredPrompt.trimEnd() + "\n\n" +
+                "Think through the problem carefully before answering. " +
+                "Put your internal reasoning inside <think>...</think> and then give " +
+                "the final answer after the closing tag."
+            ReasoningMode.OFF -> configuredPrompt.trimEnd() + "\n\n" +
+                "Answer directly and concisely. Do not produce a thinking or reasoning " +
+                "section, and do not use <think> tags." +
+                if (isQwen3) " Follow the /no_think instruction." else ""
+        }
+    }
+
+    private fun isQwen3Model(modelId: String): Boolean {
+        val normalized = modelId.lowercase()
+        return normalized.contains("qwen3") ||
+            normalized.contains("qwen-3") ||
+            normalized.contains("qwen_3")
     }
 
     private fun formatMessageWithAttachments(message: ChatMessage): String {
@@ -198,6 +326,6 @@ class SendMessageUseCase @Inject constructor(
 class SendMessageException(message: String) : Exception(message)
 
 private const val TAG = "SendMessageUseCase"
-private const val MAX_HISTORY_MESSAGES = 30
-private const val MAX_PROMPT_CHARS = 24_000
 private const val MAX_ATTACHMENT_TEXT_CHARS = 20_000
+private const val MIN_PROMPT_TOKENS = 512
+private const val PROMPT_OVERHEAD_TOKENS = 64

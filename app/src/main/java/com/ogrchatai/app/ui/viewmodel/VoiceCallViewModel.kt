@@ -133,7 +133,9 @@ class VoiceCallViewModel @Inject constructor(
         viewModelScope.launch {
             val ttsResult = textToSpeechManager.prepare(
                 locale = Locale.getDefault(),
-                gender = appSettings.voiceGender
+                gender = appSettings.voiceGender,
+                engine = appSettings.ttsEngine,
+                voice = appSettings.ttsVoice
             )
             if (ttsResult.isFailure) {
                 failCall(ttsResult.exceptionOrNull()?.message ?: "Text-to-speech is unavailable")
@@ -154,6 +156,8 @@ class VoiceCallViewModel @Inject constructor(
                 failCall(loadResult.exceptionOrNull()?.message ?: "Failed to load model")
                 return@launch
             }
+            inferenceEngine.invalidateConversation("voice-call")
+            turns.clear()
 
             _uiState.update {
                 it.copy(
@@ -264,6 +268,7 @@ class VoiceCallViewModel @Inject constructor(
         voiceSessionActive = false
         voiceInputManager.cancel()
         textToSpeechManager.stop()
+        inferenceEngine.invalidateConversation("voice-call")
         turns.clear()
         _uiState.update {
             it.copy(
@@ -330,22 +335,26 @@ class VoiceCallViewModel @Inject constructor(
 
         generationJob = viewModelScope.launch {
             try {
-                val prompt = buildPrompt()
+                val contextSeed = buildContextSeed()
                 val config = InferenceEngine.GenerationConfig(
                     maxTokens = appSettings.generationConfig.maxTokens.coerceAtMost(512),
                     temperature = appSettings.generationConfig.temperature,
                     topP = appSettings.generationConfig.topP,
                     topK = appSettings.generationConfig.topK,
-                    repeatPenalty = appSettings.generationConfig.repeatPenalty
+                    repeatPenalty = appSettings.generationConfig.repeatPenalty,
+                    contextSize = 4096
                 )
 
                 val response = StringBuilder()
                 inferenceEngine.generateTextStream(
                     modelId = _uiState.value.selectedModelId,
-                    prompt = prompt,
+                    prompt = userText,
                     systemPrompt = CALL_SYSTEM_PROMPT,
-                    config = config
+                    config = config,
+                    conversationKey = "voice-call",
+                    contextSeed = contextSeed
                 ).collect { token ->
+                    if (token.isReasoning) return@collect
                     if (response.isEmpty()) {
                         _uiState.update {
                             it.copy(
@@ -438,11 +447,16 @@ class VoiceCallViewModel @Inject constructor(
         }
     }
 
-    private fun buildPrompt(): String {
-        val history = turns.takeLast(MAX_TURNS).joinToString("\n") { turn ->
-            "${if (turn.role == CallRole.USER) "User" else "Assistant"}: ${turn.content}"
-        }
-        return if (history.isBlank()) "Assistant:" else "$history\nAssistant:"
+    private fun buildContextSeed(): String {
+        val priorTurns = turns.dropLast(1).takeLast(MAX_TURNS)
+        if (priorTurns.isEmpty()) return ""
+        return buildString {
+            appendLine("[Earlier voice-call conversation - background only]")
+            priorTurns.forEach { turn ->
+                append(if (turn.role == CallRole.USER) "User: " else "Assistant: ")
+                appendLine(turn.content)
+            }
+        }.trim()
     }
 
     override fun onCleared() {

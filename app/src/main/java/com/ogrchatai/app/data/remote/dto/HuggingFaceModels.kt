@@ -3,6 +3,7 @@ package com.ogrchatai.app.data.remote.dto
 import com.google.gson.annotations.SerializedName
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
 
 @Serializable
 data class HuggingFaceModel(

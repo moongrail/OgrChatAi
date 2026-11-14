@@ -37,6 +37,7 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.ui.text.style.TextOverflow
 import com.ogrchatai.app.R
 import com.ogrchatai.app.domain.model.DownloadedModel
+import com.ogrchatai.app.ui.viewmodel.ChatDetailEvent
 import com.ogrchatai.app.ui.viewmodel.ChatDetailViewModel
 import kotlinx.coroutines.launch
 
@@ -56,7 +57,9 @@ fun ChatDetailScreen(
     var showAttachSheet by remember { mutableStateOf(false) }
     var showChatMenu by remember { mutableStateOf(false) }
     var showClearMessagesDialog by remember { mutableStateOf(false) }
+    var showClearMemoryDialog by remember { mutableStateOf(false) }
     var showDeleteChatDialog by remember { mutableStateOf(false) }
+    val streamingStartedAt = remember(uiState.isGenerating) { System.currentTimeMillis() }
 
     val permissionDeniedMessage = stringResource(R.string.voice_error_permission)
 
@@ -106,8 +109,8 @@ fun ChatDetailScreen(
     }
 
     // Keep the streaming answer visible while tokens are appended.
-    LaunchedEffect(uiState.streamingToken.length) {
-        if (uiState.streamingToken.isNotEmpty()) {
+    LaunchedEffect(uiState.streamingToken.length, uiState.reasoningToken.length) {
+        if (uiState.streamingToken.isNotEmpty() || uiState.reasoningToken.isNotEmpty()) {
             val totalItems = listState.layoutInfo.totalItemsCount
             val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
             if (totalItems > 0 && lastVisible >= totalItems - 2) {
@@ -120,6 +123,18 @@ fun ChatDetailScreen(
         uiState.error?.let { error ->
             snackbarHostState.showSnackbar(error, duration = SnackbarDuration.Short)
             viewModel.clearError()
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        viewModel.events.collect { event ->
+            when (event) {
+                is ChatDetailEvent.ShowError ->
+                    snackbarHostState.showSnackbar(event.message, duration = SnackbarDuration.Short)
+                is ChatDetailEvent.ShowMessage ->
+                    snackbarHostState.showSnackbar(event.message, duration = SnackbarDuration.Short)
+                ChatDetailEvent.NavigateBack -> onBackClick()
+            }
         }
     }
 
@@ -174,6 +189,19 @@ fun ChatDetailScreen(
                             onDismissRequest = { showChatMenu = false }
                         ) {
                             DropdownMenuItem(
+                                text = { Text("Clear memory") },
+                                leadingIcon = {
+                                    Icon(
+                                        Icons.Default.Memory,
+                                        contentDescription = null
+                                    )
+                                },
+                                onClick = {
+                                    showChatMenu = false
+                                    showClearMemoryDialog = true
+                                }
+                            )
+                            DropdownMenuItem(
                                 text = { Text("Clear messages") },
                                 onClick = {
                                     showChatMenu = false
@@ -210,7 +238,10 @@ fun ChatDetailScreen(
                         onChooseModel = viewModel::openModelPicker
                     )
                 }
-                ContextUsageBar(messages = uiState.messages)
+                ContextUsageBar(
+                    usedTokens = uiState.contextUsedTokens,
+                    maxTokens = uiState.contextWindowTokens
+                )
                 ChatInputBar(
                     inputText = uiState.currentInput,
                     onInputChange = viewModel::updateInput,
@@ -234,13 +265,18 @@ fun ChatDetailScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
-            val totalItems = uiState.messages.size + if (uiState.streamingToken.isNotEmpty()) 1 else 0
+            val totalItems = uiState.messages.size +
+                (if (uiState.streamingToken.isNotEmpty()) 1 else 0) +
+                (if (uiState.reasoningToken.isNotEmpty()) 1 else 0)
 
             if (uiState.isLoading) {
                 CircularProgressIndicator(
                     modifier = Modifier.align(Alignment.Center)
                 )
-            } else if (uiState.messages.isEmpty() && uiState.streamingToken.isEmpty()) {
+            } else if (uiState.messages.isEmpty() &&
+                uiState.streamingToken.isEmpty() &&
+                uiState.reasoningToken.isEmpty()
+            ) {
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
@@ -280,8 +316,14 @@ fun ChatDetailScreen(
                         )
                     }
 
+                    if (uiState.reasoningToken.isNotEmpty()) {
+                        item(key = "reasoning") {
+                            ReasoningPanel(text = uiState.reasoningToken)
+                        }
+                    }
+
                     if (uiState.streamingToken.isNotEmpty()) {
-                        item {
+                        item(key = "streaming") {
                             MessageBubble(
                                 message = com.ogrchatai.app.domain.model.Message(
                                     id = "streaming",
@@ -289,7 +331,7 @@ fun ChatDetailScreen(
                                     content = uiState.streamingToken,
                                     role = com.ogrchatai.app.domain.model.Message.Role.ASSISTANT,
                                     isPartial = true,
-                                    timestamp = System.currentTimeMillis()
+                                    timestamp = streamingStartedAt
                                 )
                             )
                         }
@@ -353,6 +395,36 @@ fun ChatDetailScreen(
                 }
             }
         }
+    }
+
+    if (showClearMemoryDialog) {
+        AlertDialog(
+            onDismissRequest = { showClearMemoryDialog = false },
+            title = { Text("Clear model memory?") },
+            text = {
+                Text(
+                    "The model will stop using earlier messages in this chat. " +
+                        "The messages stay visible, and new replies will only use " +
+                        "the conversation after this point."
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.clearMemory()
+                        showClearMemoryDialog = false
+                    },
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error
+                    )
+                ) {
+                    Text("Clear memory")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showClearMemoryDialog = false }) { Text("Cancel") }
+            }
+        )
     }
 
     if (showClearMessagesDialog) {
@@ -515,17 +587,61 @@ private fun ModelUnavailableBanner(
 }
 
 @Composable
-private fun ContextUsageBar(messages: List<com.ogrchatai.app.domain.model.Message>) {
-    if (messages.isEmpty()) return
-
-    val usedChars = messages.sumOf { message ->
-        message.content.length + message.attachments.sumOf { attachment ->
-            attachment.content?.length ?: 0
+private fun ReasoningPanel(text: String) {
+    var expanded by remember { mutableStateOf(true) }
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+        shape = MaterialTheme.shapes.medium,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { expanded = !expanded },
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = "Reasoning",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = if (expanded) "hide" else "show",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                if (expanded) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(13.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+            if (expanded) {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = text,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
     }
-    val usedTokens = (usedChars + 3) / 4
-    val maxTokens = 6_000
-    val fraction = (usedTokens.toFloat() / maxTokens).coerceIn(0f, 1f)
+}
+
+@Composable
+private fun ContextUsageBar(usedTokens: Int, maxTokens: Int) {
+    if (usedTokens <= 0) return
+
+    val safeMax = maxTokens.coerceAtLeast(1)
+    val fraction = (usedTokens.toFloat() / safeMax).coerceIn(0f, 1f)
     val isNearLimit = fraction >= 0.85f
 
     Surface(
@@ -548,7 +664,7 @@ private fun ContextUsageBar(messages: List<com.ogrchatai.app.domain.model.Messag
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Text(
-                    text = "~$usedTokens / $maxTokens tokens",
+                    text = "~$usedTokens / $safeMax tokens",
                     style = MaterialTheme.typography.labelSmall,
                     color = if (isNearLimit) MaterialTheme.colorScheme.error
                     else MaterialTheme.colorScheme.primary

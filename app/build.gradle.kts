@@ -14,10 +14,14 @@ android {
         applicationId = "com.ogrchatai.app"
         minSdk = 30
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 2
+        versionName = "1.1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        ndk {
+            // The bundled sherpa-onnx runtime and llama.cpp both ship 64-bit libraries.
+            abiFilters += listOf("arm64-v8a", "x86_64")
+        }
     }
 
     buildTypes {
@@ -104,6 +108,7 @@ dependencies {
 
     // Image loading
     implementation(libs.coil.compose)
+    implementation(libs.coil.network.okhttp)
 
     // DataStore
     implementation(libs.androidx.datastore.preferences)
@@ -117,6 +122,10 @@ dependencies {
         exclude(group = "org.jetbrains.kotlin", module = "kotlin-stdlib")
         exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-core")
     }
+
+    // On-device neural TTS (Supertonic 3 through sherpa-onnx)
+    implementation(files("libs/sherpa-onnx-2.0.1-min.aar"))
+    implementation(libs.commons.compress)
 
     // DocumentFile
     implementation(libs.androidx.documentfile)

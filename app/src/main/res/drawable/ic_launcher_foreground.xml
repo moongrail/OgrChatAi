@@ -1,30 +1,100 @@
+<?xml version="1.0" encoding="utf-8"?>
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:aapt="http://schemas.android.com/aapt"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <path android:pathData="M31,63.928c0,0 6.4,-11 12.1,-13.1c7.2,-2.6 26,-1.4 26,-1.4l38.1,38.1L107,108.928l-32,-1L31,63.928z">
+
+    <!-- Soft dark halo so the constellation reads clearly over the nebula -->
+    <path
+        android:fillAlpha="0.82"
+        android:pathData="M56,18a40,40 0 1,0 0.1,0z">
         <aapt:attr name="android:fillColor">
             <gradient
-                android:endX="85.84757"
-                android:endY="92.4963"
-                android:startX="42.9492"
-                android:startY="49.59793"
-                android:type="linear">
+                android:centerX="56"
+                android:centerY="58"
+                android:gradientRadius="42"
+                android:type="radial">
                 <item
-                    android:color="#44000000"
+                    android:color="#B3040A18"
                     android:offset="0.0" />
                 <item
-                    android:color="#00000000"
+                    android:color="#73040A18"
+                    android:offset="0.48" />
+                <item
+                    android:color="#00040A18"
                     android:offset="1.0" />
             </gradient>
         </aapt:attr>
     </path>
+
+    <!-- Warm aura behind the dog's head -->
     <path
-        android:fillColor="#FFFFFF"
-        android:fillType="nonZero"
-        android:pathData="M65.3,45.828l3.8,-6.6c0.2,-0.4 0.1,-0.9 -0.3,-1.1c-0.4,-0.2 -0.9,-0.1 -1.1,0.3l-3.9,6.7c-6.3,-2.8 -13.4,-2.8 -19.7,0l-3.9,-6.7c-0.2,-0.4 -0.7,-0.5 -1.1,-0.3C38.8,38.328 38.7,38.828 38.9,39.228l3.8,6.6C36.2,49.428 31.7,56.028 31,63.928h46C76.3,56.028 71.8,49.428 65.3,45.828zM43.4,57.328c-0.8,0 -1.5,-0.5 -1.8,-1.2c-0.3,-0.7 -0.1,-1.5 0.4,-2.1c0.5,-0.5 1.4,-0.7 2.1,-0.4c0.7,0.3 1.2,1 1.2,1.8C45.3,56.528 44.5,57.328 43.4,57.328L43.4,57.328zM64.6,57.328c-0.8,0 -1.5,-0.5 -1.8,-1.2s-0.1,-1.5 0.4,-2.1c0.5,-0.5 1.4,-0.7 2.1,-0.4c0.7,0.3 1.2,1 1.2,1.8C66.5,56.528 65.6,57.328 64.6,57.328L64.6,57.328z"
-        android:strokeWidth="1"
-        android:strokeColor="#00000000" />
+        android:fillAlpha="0.55"
+        android:pathData="M39,30a22,22 0 1,0 0.1,0z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:centerX="39"
+                android:centerY="48"
+                android:gradientRadius="23"
+                android:type="radial">
+                <item
+                    android:color="#47FDE68A"
+                    android:offset="0.0" />
+                <item
+                    android:color="#1FF59E0B"
+                    android:offset="0.55" />
+                <item
+                    android:color="#00F59E0B"
+                    android:offset="1.0" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Constellation glow underlay -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#4022D3EE"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:strokeWidth="6.0"
+        android:pathData="M31,51L42,45L39,32M42,45L49,34M42,45L51,56L61,59L70,54L77,64L79,69M77,64L74,74L69,82M61,59L54,68L49,82M54,68L66,76L69,82M79,69C82,68 84,64 85,56" />
+
+    <!-- Main constellation lines -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#A8E8FB"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:strokeWidth="2.4"
+        android:pathData="M31,51L42,45L39,32M42,45L49,34M42,45L51,56L61,59L70,54L77,64L79,69M77,64L74,74L69,82M61,59L54,68L49,82M54,68L66,76L69,82M79,69C82,68 84,64 85,56" />
+
+    <!-- Star nodes -->
+    <path
+        android:fillColor="#F8FAFC"
+        android:pathData="M39,30.4a1.6,1.6 0 1,0 3.2,0a1.6,1.6 0 1,0 -3.2,0zM49,32.4a1.6,1.6 0 1,0 3.2,0a1.6,1.6 0 1,0 -3.2,0zM51,54.4a1.7,1.7 0 1,0 3.4,0a1.7,1.7 0 1,0 -3.4,0zM61,57.2a1.8,1.8 0 1,0 3.6,0a1.8,1.8 0 1,0 -3.6,0zM70,52.2a1.8,1.8 0 1,0 3.6,0a1.8,1.8 0 1,0 -3.6,0zM77,62.2a1.7,1.7 0 1,0 3.4,0a1.7,1.7 0 1,0 -3.4,0zM79,67.3a1.7,1.7 0 1,0 3.4,0a1.7,1.7 0 1,0 -3.4,0zM74,72.3a1.5,1.5 0 1,0 3.0,0a1.5,1.5 0 1,0 -3.0,0zM69,80.3a1.7,1.7 0 1,0 3.4,0a1.7,1.7 0 1,0 -3.4,0zM54,66.3a1.6,1.6 0 1,0 3.2,0a1.6,1.6 0 1,0 -3.2,0zM49,80.3a1.7,1.7 0 1,0 3.4,0a1.7,1.7 0 1,0 -3.4,0zM66,74.3a1.5,1.5 0 1,0 3.0,0a1.5,1.5 0 1,0 -3.0,0zM84,63.4a1.3,1.3 0 1,0 2.6,0a1.3,1.3 0 1,0 -2.6,0z" />
+
+    <!-- Sirius: the brightest star sits at the dog's nose -->
+    <path
+        android:fillColor="#FDE68A"
+        android:pathData="M31,45.5L32.2,49.8L36.5,51L32.2,52.2L31,56.5L29.8,52.2L25.5,51L29.8,49.8Z" />
+    <path
+        android:fillColor="#FFF7D6"
+        android:pathData="M31,47.7L31.7,50.3L34.3,51L31.7,51.7L31,54.3L30.3,51.7L27.7,51L30.3,50.3Z" />
+
+    <!-- Eye star -->
+    <path
+        android:fillColor="#FDE68A"
+        android:pathData="M42,41.4L42.9,44.1L45.6,45L42.9,45.9L42,48.6L41.1,45.9L38.4,45L41.1,44.1Z" />
+
+    <!-- Tail tip -->
+    <path
+        android:fillColor="#FDE68A"
+        android:pathData="M85,51.4L85.9,54.1L88.6,55L85.9,55.9L85,58.6L84.1,55.9L81.4,55L84.1,54.1Z" />
+
+    <!-- Distant companion stars -->
+    <path
+        android:fillColor="#B8FFFFFF"
+        android:pathData="M22,30a0.65,0.65 0 1,0 1.3,0a0.65,0.65 0 1,0 -1.3,0zM89,44a0.7,0.7 0 1,0 1.4,0a0.7,0.7 0 1,0 -1.4,0zM27,74a0.55,0.55 0 1,0 1.1,0a0.55,0.55 0 1,0 -1.1,0zM36,87a0.6,0.6 0 1,0 1.2,0a0.6,0.6 0 1,0 -1.2,0zM89,78a0.55,0.55 0 1,0 1.1,0a0.55,0.55 0 1,0 -1.1,0z" />
 </vector>

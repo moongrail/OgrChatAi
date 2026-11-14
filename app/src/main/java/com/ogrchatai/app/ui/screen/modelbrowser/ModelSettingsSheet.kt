@@ -2,6 +2,8 @@ package com.ogrchatai.app.ui.screen.modelbrowser
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -12,6 +14,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
@@ -35,10 +38,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.ogrchatai.app.domain.model.GenerationConfig
 import com.ogrchatai.app.domain.model.ModelSettings
+import com.ogrchatai.app.domain.model.ReasoningMode
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun ModelSettingsSheet(
     modelId: String,
@@ -56,6 +60,8 @@ fun ModelSettingsSheet(
     var topK by remember { mutableIntStateOf(settings.topK) }
     var maxTokens by remember { mutableIntStateOf(settings.maxTokens) }
     var repeatPenalty by remember { mutableFloatStateOf(settings.repeatPenalty) }
+    var contextSize by remember { mutableIntStateOf(settings.contextSize.coerceIn(2048, 8192)) }
+    var reasoningMode by remember { mutableStateOf(settings.effectiveReasoningMode) }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -112,6 +118,75 @@ fun ModelSettingsSheet(
                     text = "Leave empty to use the default prompt",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                )
+            }
+
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    text = "Reasoning mode",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    ReasoningMode.entries.forEach { mode ->
+                        FilterChip(
+                            selected = reasoningMode == mode,
+                            onClick = { reasoningMode = mode },
+                            label = {
+                                Text(
+                                    when (mode) {
+                                        ReasoningMode.AUTO -> "Auto"
+                                        ReasoningMode.ON -> "On"
+                                        ReasoningMode.OFF -> "Off"
+                                    }
+                                )
+                            }
+                        )
+                    }
+                }
+                Text(
+                    text = when (reasoningMode) {
+                        ReasoningMode.AUTO -> "The model decides whether to think before answering."
+                        ReasoningMode.ON -> "Show the model's step-by-step reasoning before the answer."
+                        ReasoningMode.OFF -> "Answer directly, without a reasoning section. Faster and shorter."
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                )
+            }
+
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Context size",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        text = "$contextSize tokens",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    CONTEXT_SIZES.forEach { size ->
+                        FilterChip(
+                            selected = contextSize == size,
+                            onClick = { contextSize = size },
+                            label = { Text(size.toString()) }
+                        )
+                    }
+                }
+                Text(
+                    text = "Larger values keep more conversation but use more memory. " +
+                        "Smart context compresses older turns automatically. Engine limit: 8192.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                 )
             }
 
@@ -274,6 +349,8 @@ fun ModelSettingsSheet(
                     topK = 40
                     maxTokens = 2048
                     repeatPenalty = 1.1f
+                    contextSize = 4096
+                    reasoningMode = ReasoningMode.AUTO
                 }) {
                     Text("Reset Defaults")
                 }
@@ -285,14 +362,16 @@ fun ModelSettingsSheet(
                 TextButton(
                     onClick = {
                         onSave(
-                            ModelSettings(
+                            settings.copy(
                                 modelId = modelId,
                                 systemPrompt = systemPrompt,
                                 temperature = temperature,
                                 topP = topP,
                                 topK = topK,
                                 maxTokens = maxTokens,
-                                repeatPenalty = repeatPenalty
+                                repeatPenalty = repeatPenalty,
+                                contextSize = contextSize,
+                                reasoningMode = reasoningMode.storageValue
                             )
                         )
                         scope.launch { sheetState.hide() }
@@ -309,3 +388,5 @@ fun ModelSettingsSheet(
         }
     }
 }
+
+private val CONTEXT_SIZES = listOf(2048, 4096, 8192)

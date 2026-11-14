@@ -6,6 +6,7 @@ import com.ogrchatai.app.data.files.AttachmentProcessor
 import com.ogrchatai.app.data.local.ChatDao
 import com.ogrchatai.app.data.local.entity.ChatEntity
 import com.ogrchatai.app.data.local.entity.ChatMessageEntity
+import com.ogrchatai.app.data.preferences.UserPreferences
 import com.ogrchatai.app.domain.model.Attachment
 import com.ogrchatai.app.domain.model.Chat
 import com.ogrchatai.app.domain.model.ChatMessage
@@ -30,6 +31,7 @@ import javax.inject.Singleton
 class ChatRepositoryImpl @Inject constructor(
     private val chatDao: ChatDao,
     private val attachmentProcessor: AttachmentProcessor,
+    private val userPreferences: UserPreferences,
     @ApplicationContext private val context: Context
 ) : ChatRepository {
 
@@ -134,6 +136,10 @@ class ChatRepositoryImpl @Inject constructor(
         chatDao.updateChatTitle(chatId, title)
     }
 
+    override suspend fun clearChatMemory(chatId: Long, clearedAt: Long) {
+        chatDao.clearChatMemory(chatId, clearedAt)
+    }
+
     override suspend fun searchChats(query: String): List<Chat> {
         return chatDao.getAllChats().map { entities ->
             entities.filter {
@@ -143,8 +149,11 @@ class ChatRepositoryImpl @Inject constructor(
     }
 
     override suspend fun migrateLegacyMessages() = withContext(Dispatchers.IO) {
+        if (userPreferences.legacyMigrationDone.first()) return@withContext
+
         val messages = chatDao.getAllMessages()
         var migrated = 0
+        var failed = 0
 
         messages.forEach { entity ->
             try {
@@ -183,8 +192,13 @@ class ChatRepositoryImpl @Inject constructor(
             } catch (e: Exception) {
                 // Do not delete data that could not be encrypted. It remains readable and the
                 // migration will be retried on the next app start.
+                failed++
                 Log.e(TAG, "Failed to encrypt legacy message ${entity.id}", e)
             }
+        }
+
+        if (failed == 0) {
+            userPreferences.setLegacyMigrationDone(true)
         }
 
         if (migrated > 0) {
@@ -280,7 +294,8 @@ class ChatRepositoryImpl @Inject constructor(
         modelId = modelId,
         folderId = folderId,
         createdAt = createdAt,
-        updatedAt = updatedAt
+        updatedAt = updatedAt,
+        memoryClearedAt = memoryClearedAt
     )
 
     private fun Chat.toEntity(): ChatEntity = ChatEntity(
@@ -289,7 +304,8 @@ class ChatRepositoryImpl @Inject constructor(
         modelId = modelId,
         folderId = folderId,
         createdAt = createdAt,
-        updatedAt = updatedAt
+        updatedAt = updatedAt,
+        memoryClearedAt = memoryClearedAt
     )
 
     private fun ChatMessage.toEntity(): ChatMessageEntity = ChatMessageEntity(

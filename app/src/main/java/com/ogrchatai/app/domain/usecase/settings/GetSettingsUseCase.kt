@@ -1,10 +1,9 @@
 package com.ogrchatai.app.domain.usecase.settings
 
+import com.ogrchatai.app.data.preferences.UserPreferences
 import com.ogrchatai.app.domain.model.AppSettings
-import com.ogrchatai.app.domain.model.GenerationConfig
 import com.ogrchatai.app.domain.model.Language
 import com.ogrchatai.app.domain.model.ThemeMode
-import com.ogrchatai.app.data.preferences.UserPreferences
 import com.ogrchatai.app.domain.repository.ModelRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
@@ -15,7 +14,7 @@ class GetSettingsUseCase @Inject constructor(
     private val userPreferences: UserPreferences
 ) {
     operator fun invoke(): Flow<AppSettings> {
-        return combine(
+        val base = combine(
             userPreferences.language,
             userPreferences.themeMode,
             modelRepository.getGenerationConfig(),
@@ -31,6 +30,14 @@ class GetSettingsUseCase @Inject constructor(
                 generationConfig = genConfig,
                 voiceGender = voiceGender
             )
+        }
+
+        return combine(
+            base,
+            userPreferences.ttsEngine,
+            userPreferences.ttsVoice
+        ) { settings, ttsEngine, ttsVoice ->
+            settings.copy(ttsEngine = ttsEngine, ttsVoice = ttsVoice)
         }
     }
 }

@@ -1,55 +1,75 @@
 # Security Policy
 
-## Supported Versions
+## Supported versions
 
-| Version | Supported          |
-| ------- | ------------------ |
-| 1.0.x   | :white_check_mark: |
+| Version | Supported |
+| ------- | --------- |
+| 1.1.x / `main` | Yes |
+| `release/*` branches | Yes, when published |
 
-## Reporting a Vulnerability
+## Reporting a vulnerability
 
-If you discover a security vulnerability within OgrChatAi, please send an email to the project maintainer. All security vulnerabilities will be promptly addressed.
+If you discover a security vulnerability in OgrChatAi, report it privately to
+the project maintainer. Do not publish exploit details in GitHub issues.
 
-**Please do NOT report security vulnerabilities through public GitHub issues.**
+Please include:
 
-### What to include
+- a description of the vulnerability;
+- steps to reproduce;
+- the affected version or branch;
+- potential impact;
+- a suggested fix, if available.
 
-- Description of the vulnerability
-- Steps to reproduce
-- Potential impact
-- Suggested fix (if any)
+Initial response is normally within 48 hours. Critical issues are prioritised
+for a patch release.
 
-### Response time
+## Security model
 
-- Initial response: Within 48 hours
-- Fix timeline: Within 7 days for critical issues
+OgrChatAi is designed to keep user data on the device:
 
-## Security Best Practices
+- **No telemetry** — no usage analytics are collected.
+- **No accounts** — no registration or cloud profile is required.
+- **Local storage** — chats, attachments, and settings stay on the device.
+- **Encrypted messages** — chat message bodies are encrypted with AES-GCM keys
+  protected by Android Keystore.
+- **Local inference** — prompts and model responses are processed on-device.
+- **Local speech** — neural TTS audio is generated on-device and is never
+  uploaded.
+- **Network access only for downloads** — model files and the optional neural
+  voice pack are fetched from HuggingFace or the sherpa-onnx GitHub releases.
+  The app does not upload chats, prompts, or audio.
+- **Source available for audit** — the code can be inspected, but it remains
+  proprietary and may not be used without permission. See [LICENSE](LICENSE).
 
-OgrChatAi is designed with privacy in mind:
+Speech recognition is provided by the Android speech recognition service. Some
+devices use an offline speech pack; others may send audio to the device's speech
+provider. That behaviour is controlled by Android and the speech engine selected
+on the device, not by OgrChatAi. Use an offline recognition pack when speech must
+remain fully local.
 
-- **No telemetry** — We don't collect any usage data
-- **No accounts** — No registration required
-- **Local storage** — All data stays on your device
-- **No network calls** — Except for model downloads from HuggingFace
-- **Open source** — Code is fully auditable
-- **AES-GCM encryption** — User messages encrypted with Android Keystore
+## Data handling
 
-## Data Handling
-
-- Chat messages are stored locally in Room database (encrypted)
-- Models are stored in app-specific storage
-- Settings are stored in DataStore Preferences
-- No data is sent to any server except HuggingFace for model downloads
+- Chat messages and attachments are stored locally in the app's private storage.
+- Downloaded GGUF models and the optional Supertonic 3 voice pack are stored in
+  app-specific storage.
+- Settings are stored in DataStore Preferences.
+- No data is sent to an OgrChatAi server. The project has no backend.
 
 ## Permissions
 
-OgrChatAi requests minimal permissions:
+OgrChatAi requests:
 
-- `INTERNET` — For downloading models from HuggingFace
-- `READ_MEDIA_*` — For attaching files and images to chats
-- `POST_NOTIFICATIONS` — For download progress notifications
+- `INTERNET` — downloading models and the optional neural voice pack.
+- `ACCESS_NETWORK_STATE` — showing download connectivity state.
+- `READ_MEDIA_IMAGES`, `READ_MEDIA_VIDEO`, `READ_MEDIA_AUDIO`, and legacy
+  `READ_EXTERNAL_STORAGE` (Android 12 and below) — attaching user-selected files.
+- `POST_NOTIFICATIONS` — download progress notifications.
+- `RECORD_AUDIO` — voice input and voice calls.
+
+The app requests microphone access only when the user starts voice input or a
+voice call.
 
 ## Updates
 
-Security updates will be released as patch versions and announced in the Releases section.
+Security fixes are released as patch versions. Users should install updates from
+the official repository only.

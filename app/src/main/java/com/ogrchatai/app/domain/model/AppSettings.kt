@@ -4,5 +4,7 @@ data class AppSettings(
     val language: Language = Language.ENGLISH,
     val theme: ThemeMode = ThemeMode.SYSTEM,
     val generationConfig: GenerationConfig = GenerationConfig(),
-    val voiceGender: VoiceGender = VoiceGender.FEMALE
+    val voiceGender: VoiceGender = VoiceGender.FEMALE,
+    val ttsEngine: TtsEngine = TtsEngine.AUTO,
+    val ttsVoice: TtsVoice = TtsVoice.F1
 )

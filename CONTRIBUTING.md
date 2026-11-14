@@ -1,63 +1,62 @@
 # Contributing to OgrChatAi
 
-Thank you for your interest in contributing to OgrChatAi! This document provides guidelines and information about contributing to this project.
+OgrChatAi is a proprietary, source-available project. The repository is public
+for viewing and evaluation only; it is not an open-source project. Forking,
+modifying, distributing, or using the app requires prior written permission
+from the copyright holder. See [LICENSE](LICENSE).
 
-## Getting Started
+## Before you contribute
 
-1. Fork the repository
-2. Clone your fork: `git clone https://github.com/your-username/OgrChatAi.git`
-3. Create a feature branch: `git checkout -b feature/amazing-feature`
-4. Make your changes
-5. Commit: `git commit -m 'Add amazing feature'`
-6. Push: `git push origin feature/amazing-feature`
-7. Open a Pull Request
+Do not open a pull request or publish a fork without prior written permission.
+If you have received permission to contribute:
 
-## Development Setup
+1. Agree with the maintainer on the scope and the terms in writing.
+2. Create a branch from the branch specified by the maintainer.
+3. Keep the change focused and add tests where practical.
+4. Update `README.md` and `CHANGELOG.md` when behaviour changes.
+5. Submit the change for review; the maintainer decides whether and where it
+   is published.
 
-### Prerequisites
+By submitting a contribution, you grant the copyright holder a perpetual,
+worldwide, royalty-free right to use, modify, relicense, and distribute the
+contribution as part of OgrChatAi. Do not submit code you cannot license on
+those terms.
 
-- Android Studio Ladybug (2024.2+)
+## Development setup
+
+- Android Studio with support for the project's Android Gradle Plugin
 - JDK 17
-- Android SDK 35
+- Android SDK 37 (`compileSdk = 37`)
+- Android 11+ device or emulator (`minSdk = 30`)
 
-### Building
-
-```bash
-./gradlew assembleDebug
-```
-
-### Testing
+Build:
 
 ```bash
-./gradlew test
-./gradlew connectedAndroidTest
+./gradlew :app:assembleDebug
 ```
 
-## Code Style
+Run JVM unit tests:
 
-- Follow [Kotlin Coding Conventions](https://kotlinlang.org/docs/coding-conventions.html)
-- Use meaningful variable and function names
-- Add KDoc comments for public APIs
-- Keep functions small and focused
-- Use coroutines for async operations
+```bash
+./gradlew :app:testDebugUnitTest
+```
 
-## Architecture
+Instrumentation tests require a connected device:
 
-We follow Clean Architecture with MVVM:
+```bash
+./gradlew :app:connectedDebugAndroidTest
+```
 
-- **data/** — Data sources, repositories implementations
-- **domain/** — Business logic, models, repository interfaces
-- **ui/** — Compose screens, ViewModels, components
+## Code style
 
-## Pull Request Guidelines
+- Follow the Kotlin coding conventions.
+- Keep UI in Compose and business logic in ViewModels/use cases.
+- Prefer small, focused functions and explicit names.
+- Add KDoc for public APIs.
+- Do not add telemetry, analytics, advertising, or cloud dependencies.
+- Do not commit API keys, signing keys, model files, or generated APKs.
 
-1. **Title:** Clear, descriptive title
-2. **Description:** What changes and why
-3. **Tests:** Add tests for new features
-4. **Documentation:** Update README if needed
-5. **Code Review:** Be open to feedback
-
-## Commit Messages
+## Commit messages
 
 Use conventional commits:
 
@@ -66,31 +65,16 @@ Use conventional commits:
 - `docs:` documentation
 - `style:` formatting
 - `refactor:` code restructuring
-- `test:` adding tests
+- `test:` tests
 - `chore:` maintenance
 
-Examples:
-```
-feat: add voice input support
-fix: resolve crash on model download
-docs: update installation instructions
-```
+## Security
 
-## Reporting Issues
-
-Use GitHub Issues with:
-
-- **Bug:** Steps to reproduce, expected vs actual behavior
-- **Feature:** Description, use case, alternatives considered
-- **Question:** Clear description of your question
-
-## Code of Conduct
-
-- Be respectful and inclusive
-- Focus on constructive feedback
-- Help newcomers learn
-- Celebrate contributions of all sizes
+Please report vulnerabilities privately as described in [SECURITY.md](SECURITY.md).
+Do not open a public issue with exploit details.
 
 ## License
 
-By contributing, you agree that your contributions will be licensed under the Apache License 2.0.
+OgrChatAi is distributed under the proprietary terms in [LICENSE](LICENSE).
+Third-party components remain under their own licenses; see
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

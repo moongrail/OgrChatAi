@@ -1,7 +1,6 @@
 package com.ogrchatai.app.di
 
 import android.content.Context
-import androidx.room.Room
 import com.ogrchatai.app.data.local.AppDatabase
 import com.ogrchatai.app.data.local.ChatDao
 import com.ogrchatai.app.data.local.ModelDao
@@ -58,13 +57,7 @@ object AppModule {
     @Provides
     @Singleton
     fun provideAppDatabase(@ApplicationContext context: Context): AppDatabase {
-        return Room.databaseBuilder(
-            context,
-            AppDatabase::class.java,
-            "chat_llm_database"
-        )
-            .fallbackToDestructiveMigration()
-            .build()
+        return AppDatabase.create(context)
     }
 
     @Provides

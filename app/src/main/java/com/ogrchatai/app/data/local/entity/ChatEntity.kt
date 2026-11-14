@@ -34,5 +34,8 @@ data class ChatEntity(
     val createdAt: Long = System.currentTimeMillis(),
 
     @ColumnInfo(name = "updated_at")
-    val updatedAt: Long = System.currentTimeMillis()
+    val updatedAt: Long = System.currentTimeMillis(),
+
+    @ColumnInfo(name = "memory_cleared_at", defaultValue = "0")
+    val memoryClearedAt: Long = 0L
 )

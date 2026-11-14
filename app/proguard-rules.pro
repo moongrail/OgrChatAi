@@ -97,14 +97,19 @@
 }
 
 # =========================
-# Coil
+# Coil 3
 # =========================
--dontwarn coil.**
--keep class coil.** { *; }
--keep class coil.decode.** { *; }
--keep class coil.fetch.** { *; }
--keep class coil.request.** { *; }
--keep class coil.util.** { *; }
+-dontwarn coil3.**
+-keep class coil3.** { *; }
+
+# =========================
+# Native bridges
+# =========================
+# sherpa-onnx reaches Kotlin/Java objects from JNI; names must stay stable.
+-keep class com.k2fsa.sherpa.onnx.** { *; }
+-keepclasseswithmembernames class * {
+    native <methods>;
+}
 
 # =========================
 # Coroutines

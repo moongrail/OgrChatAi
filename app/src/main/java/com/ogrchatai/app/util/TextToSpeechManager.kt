@@ -6,6 +6,11 @@ import android.os.Looper
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.speech.tts.Voice
+import android.util.Log
+import com.ogrchatai.app.data.tts.NeuralTextToSpeechEngine
+import com.ogrchatai.app.data.tts.NeuralVoiceRepository
+import com.ogrchatai.app.domain.model.TtsEngine
+import com.ogrchatai.app.domain.model.TtsVoice
 import com.ogrchatai.app.domain.model.VoiceGender
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CompletableDeferred
@@ -15,18 +20,21 @@ import kotlinx.coroutines.withContext
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicLong
 import javax.inject.Inject
+import javax.inject.Singleton
 import kotlin.coroutines.resume
 
 /**
- * Streaming text-to-speech helper for the voice-call screen.
+ * Streaming speech for the voice-call screen and Settings previews.
  *
- * Complete sentences are queued to Android TTS as soon as they arrive from the model, so the
- * assistant starts speaking before generation has finished. The class also selects a voice based
- * on the user's male/female preference and falls back to pitch adjustment when the installed TTS
- * engine does not expose gender information.
+ * When the Supertonic 3 model is installed it is used for natural, emotional
+ * speech. Android's system TTS remains available as a transparent fallback, and
+ * is used directly when the user selects the system engine.
  */
+@Singleton
 class TextToSpeechManager @Inject constructor(
-    @ApplicationContext private val context: Context
+    @ApplicationContext private val context: Context,
+    private val neuralVoiceRepository: NeuralVoiceRepository,
+    private val neuralEngine: NeuralTextToSpeechEngine
 ) {
 
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -36,7 +44,13 @@ class TextToSpeechManager @Inject constructor(
     private var initialized = false
     private var preparing: CompletableDeferred<Result<Unit>>? = null
     private var desiredLocale: Locale = Locale.getDefault()
+    private var systemLanguageTag: String? = null
     private var desiredGender: VoiceGender = VoiceGender.FEMALE
+    private var desiredEngine: TtsEngine = TtsEngine.AUTO
+    private var desiredVoice: TtsVoice = TtsVoice.F1
+
+    private var useNeural = false
+    private var neuralStreaming = false
 
     private val streamBuffer = StringBuilder()
     private var pendingUtterances = 0
@@ -44,27 +58,66 @@ class TextToSpeechManager @Inject constructor(
 
     var onAllDone: (() -> Unit)? = null
 
-    fun isReady(): Boolean = initialized && tts != null
+    val isUsingNeural: Boolean
+        get() = useNeural && neuralEngine.isReady()
 
-    suspend fun prepare(locale: Locale, gender: VoiceGender): Result<Unit> =
-        withContext(Dispatchers.Main) {
-            desiredLocale = locale
-            desiredGender = gender
+    fun isReady(): Boolean = isUsingNeural || (initialized && tts != null)
 
-            if (initialized && tts != null) {
-                return@withContext configure(tts!!)
-            }
+    suspend fun prepare(
+        locale: Locale,
+        gender: VoiceGender,
+        engine: TtsEngine = TtsEngine.AUTO,
+        voice: TtsVoice = TtsVoice.forGender(gender)
+    ): Result<Unit> = withContext(Dispatchers.Main) {
+        desiredLocale = locale
+        desiredGender = gender
+        desiredEngine = engine
+        desiredVoice = voice
 
-            val existing = preparing
-            if (existing != null) {
-                return@withContext existing.await()
-            }
-
-            val deferred = CompletableDeferred<Result<Unit>>()
-            preparing = deferred
-            createEngine(deferred)
-            deferred.await()
+        val systemResult = prepareSystem(locale)
+        if (engine == TtsEngine.SYSTEM) {
+            useNeural = false
+            neuralEngine.release()
+            return@withContext systemResult
         }
+
+        val modelDir = neuralVoiceRepository.getModelDir()
+        if (modelDir == null) {
+            useNeural = false
+            neuralEngine.release()
+            return@withContext systemResult
+        }
+
+        val neuralResult = neuralEngine.prepare(modelDir)
+        useNeural = neuralResult.isSuccess
+        if (!useNeural) {
+            neuralEngine.release()
+            if (systemResult.isFailure) {
+                return@withContext Result.failure(
+                    neuralResult.exceptionOrNull()
+                        ?: systemResult.exceptionOrNull()
+                        ?: IllegalStateException("Text-to-speech is not available")
+                )
+            }
+        }
+        Result.success(Unit)
+    }
+
+    private suspend fun prepareSystem(locale: Locale): Result<Unit> {
+        if (initialized && tts != null) {
+            return configure(tts!!)
+        }
+
+        val existing = preparing
+        if (existing != null) {
+            return existing.await()
+        }
+
+        val deferred = CompletableDeferred<Result<Unit>>()
+        preparing = deferred
+        createEngine(deferred)
+        return deferred.await()
+    }
 
     private fun createEngine(deferred: CompletableDeferred<Result<Unit>>) {
         var engine: TextToSpeech? = null
@@ -75,9 +128,11 @@ class TextToSpeechManager @Inject constructor(
                     initialized = false
                     tts = null
                     preparing = null
-                    deferred.complete(Result.failure(
-                        IllegalStateException("Text-to-speech engine is not available")
-                    ))
+                    deferred.complete(
+                        Result.failure(
+                            IllegalStateException("Text-to-speech engine is not available")
+                        )
+                    )
                     return@post
                 }
 
@@ -92,24 +147,55 @@ class TextToSpeechManager @Inject constructor(
     }
 
     private fun configure(engine: TextToSpeech): Result<Unit> {
-        val languageResult = engine.setLanguage(desiredLocale)
-        if (languageResult == TextToSpeech.LANG_MISSING_DATA ||
-            languageResult == TextToSpeech.LANG_NOT_SUPPORTED
-        ) {
-            return Result.failure(
-                IllegalStateException(
-                    "Voice data for ${desiredLocale.displayLanguage} is not installed"
-                )
-            )
+        val languageResult = applySystemLanguage(engine, desiredLocale, force = true)
+        if (languageResult.isFailure) {
+            return languageResult
         }
 
-        selectVoice(engine)
-        engine.setPitch(if (desiredGender == VoiceGender.MALE) 0.82f else 1.12f)
+        // Do not force an artificial pitch. It was the main reason the fallback
+        // voice sounded robotic. If a matching-gender voice exists, use it as-is;
+        // otherwise keep the engine's natural pitch.
+        engine.setPitch(1.0f)
         engine.setSpeechRate(1.0f)
         return Result.success(Unit)
     }
 
-    private fun selectVoice(engine: TextToSpeech) {
+    /**
+     * Switches the system engine to the detected language before each utterance.
+     * The neural model detects language itself; the system fallback needs this
+     * explicit switch so an English reply is not read with a Russian voice (and
+     * vice versa) when the device UI language differs from the answer.
+     */
+    private fun applySystemLanguage(
+        engine: TextToSpeech,
+        locale: Locale,
+        force: Boolean = false
+    ): Result<Unit> {
+        val tag = locale.language.lowercase(Locale.ROOT)
+        if (!force && systemLanguageTag == tag) return Result.success(Unit)
+
+        val languageResult = engine.setLanguage(locale)
+        if (languageResult == TextToSpeech.LANG_MISSING_DATA ||
+            languageResult == TextToSpeech.LANG_NOT_SUPPORTED
+        ) {
+            if (!force && tag != desiredLocale.language.lowercase(Locale.ROOT)) {
+                return applySystemLanguage(engine, desiredLocale, force = true)
+            }
+            systemLanguageTag = null
+            return Result.failure(
+                IllegalStateException(
+                    "Voice data for ${locale.displayLanguage} is not installed"
+                )
+            )
+        }
+
+        systemLanguageTag = tag
+        selectVoice(engine, locale)
+        Log.d(TAG, "System TTS language -> ${locale.toLanguageTag()}, voice=${engine.voice?.name}")
+        return Result.success(Unit)
+    }
+
+    private fun selectVoice(engine: TextToSpeech, locale: Locale) {
         val voices = try {
             engine.voices.orEmpty()
         } catch (_: Exception) {
@@ -119,7 +205,7 @@ class TextToSpeechManager @Inject constructor(
         if (voices.isEmpty()) return
 
         val sameLanguage = voices.filter {
-            it.locale.language.equals(desiredLocale.language, ignoreCase = true)
+            it.locale.language.equals(locale.language, ignoreCase = true)
         }
         if (sameLanguage.isEmpty()) return
 
@@ -133,7 +219,7 @@ class TextToSpeechManager @Inject constructor(
             try {
                 engine.voice = matching
             } catch (_: Exception) {
-                // Some engines expose voices they cannot actually select. Pitch still applies.
+                // Some engines expose voices they cannot actually select.
             }
         }
     }
@@ -158,10 +244,21 @@ class TextToSpeechManager @Inject constructor(
     }
 
     fun speakPreview(text: String) {
+        val detectedLanguage = TtsLanguageDetector.detect(
+            text,
+            fallback = desiredLocale.language
+        )
+        val detectedLocale = Locale.forLanguageTag(detectedLanguage)
+        if (isUsingNeural) {
+            neuralEngine.onAllDone = null
+            neuralEngine.speakPreview(text, detectedLanguage, desiredVoice)
+            return
+        }
         val engine = tts ?: return
+        applySystemLanguage(engine, detectedLocale)
         val utteranceId = "ogrtts-preview-${utteranceCounter.incrementAndGet()}"
         try {
-            engine.speak(cleanupForSpeech(text), TextToSpeech.QUEUE_FLUSH, null, utteranceId)
+            engine.speak(cleanupForSystemSpeech(text), TextToSpeech.QUEUE_FLUSH, null, utteranceId)
         } catch (_: Exception) {
             // A missing engine is reported by prepare(); a preview must never crash Settings.
         }
@@ -171,20 +268,48 @@ class TextToSpeechManager @Inject constructor(
         streamBuffer.clear()
         pendingUtterances = 0
         streamFinished = false
+        neuralStreaming = false
         try {
             tts?.stop()
         } catch (_: Exception) {
             // Ignore playback stop failures.
         }
+
+        if (isUsingNeural) {
+            neuralStreaming = true
+            neuralEngine.onAllDone = {
+                mainHandler.post {
+                    if (neuralStreaming) {
+                        neuralStreaming = false
+                        val callback = onAllDone
+                        onAllDone = null
+                        callback?.invoke()
+                    }
+                }
+            }
+            neuralEngine.startStreaming(
+                languageTag = desiredLocale.toLanguageTag(),
+                voice = desiredVoice
+            )
+        }
     }
 
     fun appendStreamingToken(token: String) {
-        if (token.isEmpty() || tts == null) return
+        if (token.isEmpty()) return
+        if (isUsingNeural) {
+            neuralEngine.appendStreamingToken(token)
+            return
+        }
+        if (tts == null) return
         streamBuffer.append(token)
         drainBuffer(flush = false)
     }
 
     fun finishStreaming() {
+        if (isUsingNeural) {
+            neuralEngine.finishStreaming()
+            return
+        }
         drainBuffer(flush = true)
         streamFinished = true
         notifyIfFinished()
@@ -194,6 +319,9 @@ class TextToSpeechManager @Inject constructor(
         streamBuffer.clear()
         pendingUtterances = 0
         streamFinished = false
+        neuralStreaming = false
+        neuralEngine.onAllDone = null
+        neuralEngine.stop()
         onAllDone = null
         try {
             tts?.stop()
@@ -202,8 +330,20 @@ class TextToSpeechManager @Inject constructor(
         }
     }
 
+    /** Release the large neural model, e.g. before deleting it from storage. */
+    fun shutdownNeural() {
+        if (useNeural) {
+            useNeural = false
+            neuralStreaming = false
+        }
+        neuralEngine.onAllDone = null
+        neuralEngine.release()
+    }
+
     fun shutdown() {
         stop()
+        neuralEngine.release()
+        useNeural = false
         try {
             tts?.shutdown()
         } catch (_: Exception) {
@@ -211,6 +351,7 @@ class TextToSpeechManager @Inject constructor(
         }
         tts = null
         initialized = false
+        systemLanguageTag = null
         preparing?.complete(Result.failure(IllegalStateException("TTS was shut down")))
         preparing = null
     }
@@ -240,9 +381,16 @@ class TextToSpeechManager @Inject constructor(
 
     private fun enqueue(raw: String) {
         val engine = tts ?: return
-        val text = cleanupForSpeech(raw)
+        val text = cleanupForSystemSpeech(raw)
         if (text.isBlank()) return
 
+        val detectedLanguage = TtsLanguageDetector.detect(
+            text,
+            fallback = desiredLocale.language
+        )
+        applySystemLanguage(engine, Locale.forLanguageTag(detectedLanguage))
+
+        Log.d(TAG, "System TTS sentence [$detectedLanguage]")
         pendingUtterances++
         val utteranceId = "ogrtts-${utteranceCounter.incrementAndGet()}"
         val result = try {
@@ -256,8 +404,9 @@ class TextToSpeechManager @Inject constructor(
         }
     }
 
-    private fun cleanupForSpeech(raw: String): String {
+    private fun cleanupForSystemSpeech(raw: String): String {
         return ChatUtils.stripMarkdown(raw)
+            .replace(Regex("<(?:laugh|breath|sigh)>", RegexOption.IGNORE_CASE), " ")
             .replace(Regex("```[\\s\\S]*?```"), " ")
             .replace(Regex("`[^`]*`"), " ")
             .replace(Regex("\\[([^\\]]+)]\\([^)]*\\)"), "$1")
@@ -303,6 +452,7 @@ class TextToSpeechManager @Inject constructor(
     }
 
     companion object {
+        private const val TAG = "OgrTts"
         private const val MAX_BUFFER_BEFORE_FLUSH = 220
     }
 }
