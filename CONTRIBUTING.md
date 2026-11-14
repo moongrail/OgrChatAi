@@ -1,26 +1,21 @@
 # Contributing to OgrChatAi
 
-OgrChatAi is a proprietary, source-available project. The repository is public
-for viewing and evaluation only; it is not an open-source project. Forking,
-modifying, distributing, or using the app requires prior written permission
-from the copyright holder. See [LICENSE](LICENSE).
+Thank you for your interest in contributing to OgrChatAi! This document provides
+guidelines and information about contributing to this project.
 
-## Before you contribute
+## Getting started
 
-Do not open a pull request or publish a fork without prior written permission.
-If you have received permission to contribute:
+1. Fork the repository.
+2. Clone your fork:
+   `git clone https://github.com/your-username/OgrChatAi.git`
+3. Create a feature branch: `git checkout -b feature/amazing-feature`
+4. Make your changes.
+5. Commit your changes: `git commit -m 'Add amazing feature'`
+6. Push to your fork: `git push origin feature/amazing-feature`
+7. Open a Pull Request.
 
-1. Agree with the maintainer on the scope and the terms in writing.
-2. Create a branch from the branch specified by the maintainer.
-3. Keep the change focused and add tests where practical.
-4. Update `README.md` and `CHANGELOG.md` when behaviour changes.
-5. Submit the change for review; the maintainer decides whether and where it
-   is published.
-
-By submitting a contribution, you grant the copyright holder a perpetual,
-worldwide, royalty-free right to use, modify, relicense, and distribute the
-contribution as part of OgrChatAi. Do not submit code you cannot license on
-those terms.
+For significant changes, please open an issue first so the approach can be
+discussed before implementation.
 
 ## Development setup
 
@@ -68,6 +63,22 @@ Use conventional commits:
 - `test:` tests
 - `chore:` maintenance
 
+Examples:
+
+```text
+feat: add voice input support
+fix: resolve crash on model download
+docs: update installation instructions
+```
+
+## Reporting issues
+
+Use GitHub Issues with:
+
+- **Bug:** steps to reproduce, expected vs actual behaviour;
+- **Feature:** description, use case, alternatives considered;
+- **Question:** a clear description of the question.
+
 ## Security
 
 Please report vulnerabilities privately as described in [SECURITY.md](SECURITY.md).
@@ -75,6 +86,8 @@ Do not open a public issue with exploit details.
 
 ## License
 
-OgrChatAi is distributed under the proprietary terms in [LICENSE](LICENSE).
+By contributing, you agree that your contributions will be licensed under the
+[Apache License 2.0](LICENSE).
+
 Third-party components remain under their own licenses; see
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

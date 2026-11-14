@@ -5,10 +5,6 @@ All notable changes to OgrChatAi will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-> License note: starting with 1.1.0, OgrChatAi is proprietary source-available
-> software. Entries below describe the license that was in effect at the time of
-> each release.
-
 ## [1.1.0] - 2026-11-14
 
 ### Added
@@ -34,8 +30,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - The engine now keeps a KV-cache conversation and sends only the latest user
   turn; context is rebuilt only after a reset or near the context limit.
-- The repository license changed to a proprietary source-available license.
-  Previously published Apache-2.0 versions retain their original rights.
 - Streaming UI updates are batched to reduce recompositions during generation.
 - AndroidX, Kotlin, Compose, Room, OkHttp, Retrofit and Coil updated to current
   stable releases; image loading migrated to Coil 3.
@@ -81,6 +75,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - No data collection or telemetry
 - All data stored locally on device
-- Open source codebase (Apache-2.0 at the time of release)
+- Open source codebase
 - Minimal permission requests
 - AES-GCM encryption using Android Keystore

@@ -1,8 +1,9 @@
 # Third-party notices
 
-OgrChatAi is proprietary software. See [LICENSE](LICENSE). This file lists the
-third-party components used by the app. Each component remains under its own
-license; the OgrChatAi license does not replace or restrict those rights.
+OgrChatAi is open-source software licensed under the Apache License 2.0. See
+[LICENSE](LICENSE). This file lists the third-party components used by the app.
+Each component remains under its own license; the OgrChatAi license does not
+replace or restrict those rights.
 
 ## Runtime libraries
 

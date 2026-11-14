@@ -38,8 +38,9 @@ OgrChatAi is designed to keep user data on the device:
 - **Network access only for downloads** — model files and the optional neural
   voice pack are fetched from HuggingFace or the sherpa-onnx GitHub releases.
   The app does not upload chats, prompts, or audio.
-- **Source available for audit** — the code can be inspected, but it remains
-  proprietary and may not be used without permission. See [LICENSE](LICENSE).
+- **Open source for audit** — the code is available under the Apache License
+  2.0 and can be inspected, modified, and redistributed under its terms. See
+  [LICENSE](LICENSE).
 
 Speech recognition is provided by the Android speech recognition service. Some
 devices use an offline speech pack; others may send audio to the device's speech
