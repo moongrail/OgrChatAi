@@ -35,6 +35,9 @@ interface ModelDao {
     @Query("DELETE FROM downloaded_models WHERE id = :modelId")
     suspend fun deleteModelById(modelId: Long)
 
+    @Query("DELETE FROM downloaded_models WHERE hf_model_id = :hfModelId")
+    suspend fun deleteModelsByHfId(hfModelId: String)
+
     @Query("DELETE FROM downloaded_models")
     suspend fun deleteAllModels()
 

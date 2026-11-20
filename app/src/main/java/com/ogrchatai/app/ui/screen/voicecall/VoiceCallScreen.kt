@@ -74,7 +74,6 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.compose.ui.platform.LocalContext
 import com.ogrchatai.app.domain.model.DownloadedModel
-import com.ogrchatai.app.domain.model.VoiceGender
 import com.ogrchatai.app.ui.viewmodel.VoiceCallPhase
 import com.ogrchatai.app.ui.viewmodel.VoiceCallViewModel
 
@@ -150,7 +149,7 @@ fun VoiceCallScreen(
             ModelSelectionContent(
                 models = uiState.models,
                 selectedModelId = uiState.selectedModelId,
-                voiceGender = uiState.voiceGender,
+                voiceLabel = uiState.voiceLabel,
                 onSelectModel = viewModel::selectModel,
                 onStart = {
                     val hasPermission = ContextCompat.checkSelfPermission(
@@ -186,7 +185,7 @@ fun VoiceCallScreen(
 private fun ModelSelectionContent(
     models: List<DownloadedModel>,
     selectedModelId: String,
-    voiceGender: VoiceGender,
+    voiceLabel: String,
     onSelectModel: (String) -> Unit,
     onStart: () -> Unit,
     onBrowseModels: () -> Unit,
@@ -273,9 +272,15 @@ private fun ModelSelectionContent(
 
         Spacer(modifier = Modifier.height(12.dp))
         Text(
-            text = "Voice: ${if (voiceGender == VoiceGender.MALE) "Male" else "Female"}",
+            text = "Speaking voice: $voiceLabel",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Text(
+            text = "The selected model writes the answer; this voice reads it aloud. " +
+                "Change the voice in Settings.",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f)
         )
         Spacer(modifier = Modifier.height(8.dp))
         Button(
@@ -370,7 +375,13 @@ private fun ActiveCallContent(
 
     LaunchedEffect(transcript.size, uiState.assistantTranscript.length) {
         if (transcript.isNotEmpty()) {
-            listState.animateScrollToItem(transcript.lastIndex)
+            val totalItems = listState.layoutInfo.totalItemsCount
+            val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
+            // Never fight the user's scroll position, and do not restart an
+            // animation for every streaming update.
+            if (totalItems == 0 || lastVisible >= totalItems - 2) {
+                listState.scrollToItem(transcript.lastIndex)
+            }
         }
     }
 
@@ -386,7 +397,7 @@ private fun ActiveCallContent(
             textAlign = TextAlign.Center
         )
         Text(
-            text = "${if (uiState.voiceGender == VoiceGender.MALE) "Male" else "Female"} voice",
+            text = "Speaking voice: ${uiState.voiceLabel}",
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )

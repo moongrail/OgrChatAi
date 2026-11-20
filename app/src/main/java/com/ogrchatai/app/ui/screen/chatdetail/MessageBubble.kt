@@ -122,7 +122,11 @@ fun MessageBubble(
                 }
 
                 if (message.content.isNotBlank()) {
-                    if (isUser) {
+                    if (isUser || message.isPartial) {
+                        // Re-parsing the entire answer as Markdown on every
+                        // streaming chunk makes long responses progressively
+                        // slower. Partial messages are rendered as plain text;
+                        // the final saved message is parsed once.
                         Text(
                             text = message.content,
                             style = MaterialTheme.typography.bodyLarge,

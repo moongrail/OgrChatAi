@@ -1,9 +1,21 @@
+import java.io.RandomAccessFile
+import java.util.Properties
+import org.gradle.api.GradleException
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.ksp)
     alias(libs.plugins.hilt)
+}
+
+// Local-only signing configuration. keystore.properties and *.jks are ignored by git.
+val keystorePropertiesFile = rootProject.file("keystore.properties")
+val keystoreProperties = Properties().apply {
+    if (keystorePropertiesFile.exists()) {
+        keystorePropertiesFile.inputStream().use { load(it) }
+    }
 }
 
 android {
@@ -24,10 +36,22 @@ android {
         }
     }
 
+    signingConfigs {
+        if (keystorePropertiesFile.exists()) {
+            create("release") {
+                storeFile = rootProject.file(keystoreProperties.getProperty("storeFile"))
+                storePassword = keystoreProperties.getProperty("storePassword")
+                keyAlias = keystoreProperties.getProperty("keyAlias")
+                keyPassword = keystoreProperties.getProperty("keyPassword")
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
+            signingConfig = signingConfigs.findByName("release")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -64,6 +88,99 @@ android {
 kotlin {
     compilerOptions {
         jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// android-ai-kit 1.0.0 calls common_chat_format_single(..., use_jinja=false)
+// for every message. Its legacy formatter rejects the Gemma 4 Jinja template
+// with an exception that escapes through JNI and aborts the process. The two
+// patches below change the corresponding boolean argument to true before the
+// AAR native libraries are packaged. The byte context is verified so a future
+// AiKit update fails loudly instead of silently reintroducing the crash.
+// ---------------------------------------------------------------------------
+val aiKitJinjaPatches: Map<String, Triple<Long, ByteArray, ByteArray>> = mapOf(
+    // mov w24, w4  ->  movz w24, #1
+    "arm64-v8a" to Triple(
+        0x26029cL,
+        byteArrayOf(
+            0xf8.toByte(), 0x03, 0x04, 0x2a,
+            0xf5.toByte(), 0x03, 0x03, 0x2a
+        ),
+        byteArrayOf(
+            0x38, 0x00, 0x80.toByte(), 0x52,
+            0xf5.toByte(), 0x03, 0x03, 0x2a
+        )
+    ),
+    // mov ebx, r9d  ->  push 1; pop rbx
+    "x86_64" to Triple(
+        0x26b434L,
+        byteArrayOf(
+            0x44, 0x89.toByte(), 0xcb.toByte(),
+            0x45, 0x89.toByte(), 0xc7.toByte()
+        ),
+        byteArrayOf(
+            0x6a, 0x01, 0x5b,
+            0x45, 0x89.toByte(), 0xc7.toByte()
+        )
+    )
+)
+
+tasks.matching {
+    it.name == "mergeDebugNativeLibs" || it.name == "mergeReleaseNativeLibs"
+}.configureEach {
+    outputs.upToDateWhen { false }
+    outputs.cacheIf { false }
+    doLast {
+        val mergedRoot = layout.buildDirectory
+            .dir("intermediates/merged_native_libs")
+            .get()
+            .asFile
+        val libraries = mergedRoot
+            .walkTopDown()
+            .filter { it.isFile && it.name == "libllama-common.so" }
+            .toList()
+        if (libraries.isEmpty()) {
+            throw GradleException("AiKit patch: libllama-common.so was not merged")
+        }
+
+        var changed = 0
+        var alreadyPatched = 0
+        libraries.forEach { file ->
+            val abi = file.parentFile?.name ?: return@forEach
+            val patch = aiKitJinjaPatches[abi] ?: return@forEach
+            val (offset, expected, replacement) = patch
+            RandomAccessFile(file, "rw").use { raf ->
+                if (raf.length() < offset + expected.size) {
+                    throw GradleException(
+                        "AiKit patch: ${file.name} ($abi) is shorter than expected"
+                    )
+                }
+                raf.seek(offset)
+                val actual = ByteArray(expected.size)
+                raf.readFully(actual)
+                when {
+                    actual.contentEquals(replacement) -> alreadyPatched++
+                    actual.contentEquals(expected) -> {
+                        raf.seek(offset)
+                        raf.write(replacement)
+                        changed++
+                    }
+                    else -> throw GradleException(
+                        "AiKit patch: unexpected bytes in ${file.name} ($abi). " +
+                            "The AiKit version or ABI layout changed."
+                    )
+                }
+            }
+        }
+
+        if (changed + alreadyPatched == 0) {
+            throw GradleException("AiKit patch: no supported ABI library was found")
+        }
+        logger.lifecycle(
+            "AiKit Jinja patch: $changed library file(s) changed, " +
+                "$alreadyPatched already patched"
+        )
     }
 }
 
@@ -125,7 +242,6 @@ dependencies {
 
     // On-device neural TTS (Supertonic 3 through sherpa-onnx)
     implementation(files("libs/sherpa-onnx-2.0.1-min.aar"))
-    implementation(libs.commons.compress)
 
     // DocumentFile
     implementation(libs.androidx.documentfile)

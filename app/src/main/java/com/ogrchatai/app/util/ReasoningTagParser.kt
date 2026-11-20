@@ -152,7 +152,7 @@ class ReasoningTagParser(
         tags.forEach { tag ->
             val index = text.indexOf(tag, ignoreCase = true)
             if (index >= 0 && (index < bestIndex ||
-                    (index == bestIndex && bestTag != null && tag.length > bestTag!!.length))
+                    (index == bestIndex && bestTag != null && tag.length > bestTag.length))
             ) {
                 bestIndex = index
                 bestTag = tag
@@ -183,7 +183,11 @@ class ReasoningTagParser(
             "<thinking>",
             "<|thinking|>",
             "<reasoning>",
-            "<|reasoning|>"
+            "<|reasoning|>",
+            // Gemma 4 opens its analysis channel with these tokens and then
+            // closes it with <channel|> before the final answer.
+            "<|channel>thought",
+            "<|channel>analysis"
         )
 
         private val CLOSE_TAGS = listOf(
@@ -192,7 +196,10 @@ class ReasoningTagParser(
             "<|/thinking|>",
             "</reasoning>",
             "<|/reasoning|>",
-            "<｜end▁of▁thinking｜>"
+            "<｜end▁of▁thinking｜>",
+            "<channel|>",
+            "<|channel|>",
+            "<|/channel|>"
         )
     }
 }

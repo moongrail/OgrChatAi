@@ -1,5 +1,7 @@
 package com.ogrchatai.app.domain.model
 
+import com.ogrchatai.app.util.GgufSelection
+
 data class ModelInfo(
     val id: String,
     val modelId: String = id,
@@ -13,10 +15,10 @@ data class ModelInfo(
     val siblings: List<Sibling> = emptyList()
 ) {
     val isGGUF: Boolean
-        get() = siblings.any { it.rfilename.endsWith(".gguf") }
+        get() = ggufFiles.isNotEmpty()
 
     val ggufFiles: List<Sibling>
-        get() = siblings.filter { it.rfilename.endsWith(".gguf") }
+        get() = GgufSelection.downloadable(siblings)
 
     val formattedDownloads: String
         get() {
@@ -31,9 +33,16 @@ data class ModelInfo(
     val totalSize: Long
         get() = siblings.sumOf { it.size ?: 0L }
 
+    /**
+     * Size of the single file that [DownloadModelUseCase] will download, not
+     * the sum of every projector, split shard and alternative quantisation.
+     */
+    val estimatedDownloadSize: Long
+        get() = GgufSelection.estimatedSize(siblings) ?: 0L
+
     val formattedSize: String
         get() {
-            val bytes = totalSize.toDouble()
+            val bytes = estimatedDownloadSize.toDouble()
             val mb = bytes / (1024.0 * 1024.0)
             val gb = mb / 1024.0
             return when {
@@ -46,7 +55,7 @@ data class ModelInfo(
     val quantizationTags: List<String>
         get() {
             val quants = mutableSetOf<String>()
-            for (file in siblings) {
+            for (file in ggufFiles) {
                 val name = file.rfilename.lowercase()
                 when {
                     name.contains("q4_k_m") -> quants.add("Q4_K_M")

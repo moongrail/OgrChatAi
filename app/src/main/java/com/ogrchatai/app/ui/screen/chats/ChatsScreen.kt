@@ -91,13 +91,6 @@ fun ChatsScreen(
     var chatToDelete by remember { mutableStateOf<Long?>(null) }
     var modelsExpanded by remember { mutableStateOf(true) }
 
-    val filteredChats = remember(chats, searchQuery) {
-        if (searchQuery.isBlank()) chats
-        else chats.filter { chat ->
-            chat.title.contains(searchQuery, ignoreCase = true)
-        }
-    }
-
     Scaffold(
         topBar = {
             TopAppBar(
@@ -191,7 +184,7 @@ fun ChatsScreen(
                 }
             }
 
-            if (filteredChats.isEmpty()) {
+            if (chats.isEmpty()) {
                 item {
                     Box(
                         modifier = Modifier
@@ -224,7 +217,7 @@ fun ChatsScreen(
                 }
             } else {
                 items(
-                    items = filteredChats,
+                    items = chats,
                     key = { it.id }
                 ) { chat ->
                     ChatListItem(

@@ -16,7 +16,7 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.ogrchatai.app.data.ml.InferenceEngine
 import com.ogrchatai.app.ui.navigation.OgrChatAiNavHost
 import com.ogrchatai.app.ui.theme.OgrChatAiTheme
-import com.ogrchatai.app.ui.viewmodel.SettingsViewModel
+import com.ogrchatai.app.ui.viewmodel.ThemeViewModel
 import com.ogrchatai.app.domain.model.ThemeMode
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
@@ -31,10 +31,10 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            val settingsViewModel: SettingsViewModel = hiltViewModel()
-            val uiState by settingsViewModel.uiState.collectAsState()
+            val themeViewModel: ThemeViewModel = hiltViewModel()
+            val theme by themeViewModel.theme.collectAsState()
 
-            val isDarkTheme = when (uiState.theme) {
+            val isDarkTheme = when (theme) {
                 ThemeMode.DARK -> true
                 ThemeMode.LIGHT -> false
                 ThemeMode.SYSTEM -> androidx.compose.foundation.isSystemInDarkTheme()

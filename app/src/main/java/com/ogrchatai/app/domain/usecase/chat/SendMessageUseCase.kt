@@ -13,7 +13,7 @@ import com.ogrchatai.app.domain.repository.ModelRepository
 import com.ogrchatai.app.util.ContextInput
 import com.ogrchatai.app.util.ConversationContextBuilder
 import com.ogrchatai.app.util.TokenEstimator
-import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.firstOrNull
@@ -184,6 +184,8 @@ class SendMessageUseCase @Inject constructor(
                         messageId = assistantMsgId.toString()
                     )
                 ))
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 Log.e(TAG, "Generation failed", e)
                 trySend(Result.failure(SendMessageException(e.message ?: "Generation failed")))

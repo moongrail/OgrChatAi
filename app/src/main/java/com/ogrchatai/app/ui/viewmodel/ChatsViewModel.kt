@@ -106,6 +106,8 @@ class ChatsViewModel @Inject constructor(
                         it.copy(
                             chats = chats,
                             filteredChats = filtered,
+                            searchQuery = _searchQuery.value,
+                            activeFilter = _activeFilter.value,
                             isLoading = false,
                             error = null
                         )
@@ -125,13 +127,19 @@ class ChatsViewModel @Inject constructor(
 
     private fun observeDownloadedModels() {
         viewModelScope.launch {
-            modelRepository.getDownloadedModels().collect { models ->
-                _uiState.update {
-                    it.copy(
-                        downloadedModels = models.map { m -> Triple(m.id, m.name, m.isEnabled) }
-                    )
+            modelRepository.getDownloadedModels()
+                .catch { throwable ->
+                    _uiState.update {
+                        it.copy(error = throwable.message ?: "Failed to load models")
+                    }
                 }
-            }
+                .collect { models ->
+                    _uiState.update {
+                        it.copy(
+                            downloadedModels = models.map { m -> Triple(m.id, m.name, m.isEnabled) }
+                        )
+                    }
+                }
         }
     }
 
@@ -142,8 +150,10 @@ class ChatsViewModel @Inject constructor(
             is ChatsAction.SelectModel -> selectModel(action.modelId)
             is ChatsAction.DismissModelPicker -> dismissModelPicker(action.createWithSelected)
             is ChatsAction.FilterChats -> {
-                _uiState.update { it.copy(activeFilter = action.filter) }
                 _activeFilter.value = action.filter
+                // Update the selected chip immediately; the combine flow below
+                // publishes the already-filtered list right after.
+                _uiState.update { it.copy(activeFilter = action.filter) }
             }
             is ChatsAction.ToggleModelEnabled -> toggleModelEnabled(action.modelId)
             is ChatsAction.OpenModelSettings -> openModelSettings(action.modelId)
@@ -158,6 +168,8 @@ class ChatsViewModel @Inject constructor(
         when (event) {
             is ChatsEvent.SearchQueryChanged -> {
                 _searchQuery.value = event.query
+                // A text field must reflect every keystroke immediately. The
+                // combine flow below replaces filteredChats a moment later.
                 _uiState.update { it.copy(searchQuery = event.query) }
             }
             is ChatsEvent.ChatCreated -> {

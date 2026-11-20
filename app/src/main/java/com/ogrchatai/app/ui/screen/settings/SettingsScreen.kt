@@ -106,6 +106,9 @@ fun SettingsScreen(
     var tempMaxTokens by remember(uiState.generationConfig.maxTokens) {
         mutableIntStateOf(uiState.generationConfig.maxTokens)
     }
+    val neuralInstalled = uiState.neuralVoice.isInstalled
+    val neuralActive = neuralInstalled && uiState.ttsEngine == TtsEngine.AUTO
+    val activeGender = if (neuralInstalled) uiState.ttsVoice.gender else uiState.voiceGender
 
     LaunchedEffect(Unit) {
         viewModel.events.collect { event ->
@@ -154,9 +157,10 @@ fun SettingsScreen(
             text = {
                 Text(
                     "Supertonic 3 provides 10 expressive voices and works fully on-device. " +
-                        "The download is about 123 MB; extracted files need about 300 MB of free " +
-                        "storage. The model is licensed under OpenRAIL-M. By downloading you agree " +
-                        "to that model license. Audio is generated locally and never uploaded."
+                        "The download is about 139 MB and installs directly without unpacking an " +
+                        "archive; allow about 200 MB of free storage. The model is licensed under " +
+                        "OpenRAIL-M. By downloading you agree to that model license. Audio is " +
+                        "generated locally and never uploaded."
                 )
             },
             confirmButton = {
@@ -359,8 +363,8 @@ fun SettingsScreen(
                                 Spacer(modifier = Modifier.width(12.dp))
                                 Text(
                                     text = when (engine) {
-                                        TtsEngine.AUTO -> "Neural when available (recommended)"
-                                        TtsEngine.SYSTEM -> "System speech engine"
+                                        TtsEngine.AUTO -> "Supertonic when installed (recommended)"
+                                        TtsEngine.SYSTEM -> "Android system voice only"
                                     },
                                     style = MaterialTheme.typography.bodyLarge,
                                     color = MaterialTheme.colorScheme.onSurface
@@ -368,43 +372,69 @@ fun SettingsScreen(
                             }
                         }
 
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        Text(
-                            text = "Neural voice",
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.SemiBold,
-                            modifier = Modifier.padding(horizontal = 16.dp)
-                        )
-                        VoiceSelector(
-                            selectedVoice = uiState.ttsVoice,
-                            onVoiceSelected = {
-                                viewModel.onAction(SettingsAction.UpdateTtsVoice(it))
+                        ActiveVoiceSummary(
+                            title = if (neuralActive) {
+                                "Supertonic 3 · ${uiState.ttsVoice.displayName}"
+                            } else {
+                                "Android system voice · ${activeGender.label()}"
+                            },
+                            subtitle = when {
+                                neuralActive -> "This is the voice used in calls. If Supertonic " +
+                                    "cannot load, Android falls back to its ${activeGender.label()} voice."
+                                uiState.ttsEngine == TtsEngine.SYSTEM && neuralInstalled ->
+                                    "Neural voices are installed but switched off. Android speaks " +
+                                        "every reply with the selected ${uiState.voiceGender.label()} voice."
+                                else -> "Supertonic is not installed, so Android speaks every reply " +
+                                    "with the selected ${uiState.voiceGender.label()} voice."
                             }
                         )
+
+                        if (neuralInstalled) {
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            Text(
+                                text = "Neural voice · Supertonic 3",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.padding(horizontal = 16.dp)
+                            )
+                            VoiceSelector(
+                                selectedVoice = uiState.ttsVoice,
+                                enabled = uiState.ttsEngine == TtsEngine.AUTO,
+                                onVoiceSelected = {
+                                    viewModel.onAction(SettingsAction.UpdateTtsVoice(it))
+                                }
+                            )
+                            if (uiState.ttsEngine == TtsEngine.SYSTEM) {
+                                Text(
+                                    text = "Switch to “Supertonic when installed” above to use " +
+                                        "this voice.",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
 
                         Spacer(modifier = Modifier.height(8.dp))
 
                         val status = uiState.neuralVoice
                         when {
-                            status.isDownloading || status.isExtracting -> {
+                            status.isDownloading -> {
                                 Column(
                                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
                                 ) {
                                     LinearProgressIndicator(
-                                        progress = {
-                                            if (status.isExtracting) 0.99f
-                                            else status.progress.coerceIn(0f, 1f)
-                                        },
+                                        progress = { status.progress.coerceIn(0f, 1f) },
                                         modifier = Modifier.fillMaxWidth()
                                     )
                                     Spacer(modifier = Modifier.height(6.dp))
+                                    val downloadedMb = status.downloadedBytes / (1024 * 1024)
+                                    val totalMb = status.totalBytes / (1024 * 1024)
                                     Text(
-                                        text = if (status.isExtracting) {
-                                            "Unpacking the voice model…"
-                                        } else {
-                                            "Downloading voices… ${(status.progress * 100).roundToInt()}%"
-                                        },
+                                        text = "Downloading neural voices… " +
+                                            "${(status.progress * 100).roundToInt()}% · " +
+                                            "$downloadedMb / $totalMb MB",
                                         style = MaterialTheme.typography.labelSmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
@@ -420,7 +450,11 @@ fun SettingsScreen(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Text(
-                                        text = "Installed and ready for offline use",
+                                        text = if (uiState.ttsEngine == TtsEngine.AUTO) {
+                                            "Installed and ready for offline use"
+                                        } else {
+                                            "Installed, but currently disabled by the system engine"
+                                        },
                                         style = MaterialTheme.typography.labelMedium,
                                         color = MaterialTheme.colorScheme.primary
                                     )
@@ -439,8 +473,9 @@ fun SettingsScreen(
                                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
                                 ) {
                                     Text(
-                                        text = "Download once (~123 MB) for natural, expressive " +
-                                            "speech. The system voice is used until the pack is ready.",
+                                        text = "Download once (~139 MB) for natural, expressive " +
+                                            "speech. Files install directly without an unpacking step, " +
+                                            "and the Android system voice is used until the pack is ready.",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
@@ -471,44 +506,61 @@ fun SettingsScreen(
 
                         Spacer(modifier = Modifier.height(12.dp))
 
-                        Text(
-                            text = "System fallback voice",
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.SemiBold,
-                            modifier = Modifier.padding(horizontal = 16.dp)
-                        )
-                        Text(
-                            text = "Used when the neural model is not installed or unavailable.",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(horizontal = 16.dp)
-                        )
+                        if (neuralActive) {
+                            Text(
+                                text = "Android fallback voice",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.padding(horizontal = 16.dp)
+                            )
+                            Text(
+                                text = "${activeGender.label()} · the fallback follows the gender of " +
+                                    "the selected neural voice and is used only if Supertonic cannot load.",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(horizontal = 16.dp)
+                            )
+                        } else {
+                            Text(
+                                text = "Android system voice",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.padding(horizontal = 16.dp)
+                            )
+                            Text(
+                                text = if (uiState.ttsEngine == TtsEngine.SYSTEM) {
+                                    "Used for every spoken reply while the system engine is selected."
+                                } else {
+                                    "Used until the Supertonic voice pack is installed."
+                                },
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(horizontal = 16.dp)
+                            )
 
-                        VoiceGender.entries.forEach { gender ->
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 16.dp, vertical = 2.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                RadioButton(
-                                    selected = uiState.voiceGender == gender,
-                                    onClick = {
-                                        viewModel.onAction(SettingsAction.UpdateVoiceGender(gender))
-                                    },
-                                    colors = RadioButtonDefaults.colors(
-                                        selectedColor = MaterialTheme.colorScheme.primary
+                            VoiceGender.entries.forEach { gender ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 16.dp, vertical = 2.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    RadioButton(
+                                        selected = uiState.voiceGender == gender,
+                                        onClick = {
+                                            viewModel.onAction(SettingsAction.UpdateVoiceGender(gender))
+                                        },
+                                        colors = RadioButtonDefaults.colors(
+                                            selectedColor = MaterialTheme.colorScheme.primary
+                                        )
                                     )
-                                )
-                                Spacer(modifier = Modifier.width(12.dp))
-                                Text(
-                                    text = when (gender) {
-                                        VoiceGender.FEMALE -> "Female"
-                                        VoiceGender.MALE -> "Male"
-                                    },
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
+                                    Spacer(modifier = Modifier.width(12.dp))
+                                    Text(
+                                        text = gender.label(),
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
                             }
                         }
 
@@ -696,7 +748,7 @@ fun SettingsScreen(
                         SettingsItem(
                             icon = Icons.Filled.Info,
                             title = "App Version",
-                            subtitle = "1.0.0",
+                            subtitle = com.ogrchatai.app.BuildConfig.VERSION_NAME,
                             onClick = { }
                         )
                     }
@@ -728,17 +780,58 @@ fun SettingsScreen(
     }
 }
 
+@Composable
+private fun ActiveVoiceSummary(
+    title: String,
+    subtitle: String
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 6.dp),
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Text(
+                text = "ACTIVE VOICE",
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.primary
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+private fun VoiceGender.label(): String = when (this) {
+    VoiceGender.FEMALE -> "Female"
+    VoiceGender.MALE -> "Male"
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun VoiceSelector(
     selectedVoice: TtsVoice,
+    enabled: Boolean,
     onVoiceSelected: (TtsVoice) -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
 
     ExposedDropdownMenuBox(
-        expanded = expanded,
-        onExpandedChange = { expanded = it },
+        expanded = expanded && enabled,
+        onExpandedChange = { if (enabled) expanded = it },
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 4.dp)
@@ -748,7 +841,9 @@ private fun VoiceSelector(
                 .menuAnchor()
                 .fillMaxWidth(),
             shape = RoundedCornerShape(12.dp),
-            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(
+                alpha = if (enabled) 0.45f else 0.22f
+            )
         ) {
             Row(
                 modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
@@ -759,18 +854,24 @@ private fun VoiceSelector(
                         text = selectedVoice.displayName,
                         style = MaterialTheme.typography.bodyLarge,
                         fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurface
+                        color = MaterialTheme.colorScheme.onSurface.copy(
+                            alpha = if (enabled) 1f else 0.55f
+                        )
                     )
                     Text(
                         text = selectedVoice.description,
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(
+                            alpha = if (enabled) 1f else 0.55f
+                        )
                     )
                 }
                 Icon(
                     imageVector = Icons.Filled.ArrowDropDown,
-                    contentDescription = "Choose voice",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    contentDescription = if (enabled) "Choose voice" else "Voice selection disabled",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(
+                        alpha = if (enabled) 1f else 0.4f
+                    )
                 )
             }
         }

@@ -41,6 +41,7 @@ class NeuralTextToSpeechEngine @Inject constructor(
     @ApplicationContext private val context: Context
 ) {
 
+    @Volatile
     private var tts: OfflineTts? = null
     private var loadedModelPath: String? = null
     private var loadedSampleRate: Int = 24_000
@@ -80,7 +81,7 @@ class NeuralTextToSpeechEngine @Inject constructor(
                 return@withLock Result.success(Unit)
             }
             try {
-                releaseInternal()
+                retireCurrentEngine()
                 val config = OfflineTtsConfig(
                     model = OfflineTtsModelConfig(
                         supertonic = OfflineTtsSupertonicModelConfig(
@@ -108,7 +109,7 @@ class NeuralTextToSpeechEngine @Inject constructor(
                 Result.success(Unit)
             } catch (e: Throwable) {
                 Log.e(TAG, "Failed to load Supertonic 3", e)
-                releaseInternal()
+                retireCurrentEngine()
                 Result.failure(
                     IllegalStateException(
                         e.message ?: "Failed to load the neural voice model",
@@ -168,20 +169,27 @@ class NeuralTextToSpeechEngine @Inject constructor(
 
     fun release() {
         stop()
-        tts = null
-        loadedModelPath = null
-        loadedSampleRate = 24_000
+        retireCurrentEngine()
     }
 
-    private fun releaseInternal() {
-        try {
-            tts?.release()
-        } catch (e: Exception) {
-            Log.w(TAG, "Failed to release neural TTS", e)
-        }
+    /**
+     * Detaches the current engine immediately and releases its native resources
+     * on the synthesis thread after any in-flight sentence finishes. Calling
+     * [OfflineTts.release] directly from the UI thread could race with synthesis,
+     * while simply dropping the reference leaked ~145 MB of native memory.
+     */
+    private fun retireCurrentEngine() {
+        val engine = tts ?: return
         tts = null
         loadedModelPath = null
         loadedSampleRate = 24_000
+        synthesisExecutor.execute {
+            try {
+                engine.release()
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to release neural TTS", e)
+            }
+        }
     }
 
     private fun drainBuffer(flush: Boolean) {

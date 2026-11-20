@@ -2,6 +2,7 @@ package com.ogrchatai.app.data.remote
 
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
+import com.ogrchatai.app.BuildConfig
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
@@ -29,7 +30,12 @@ class HuggingFaceApiClient @Inject constructor() {
         }
         .addInterceptor(
             HttpLoggingInterceptor().apply {
-                level = HttpLoggingInterceptor.Level.BASIC
+                level = if (BuildConfig.DEBUG) {
+                    HttpLoggingInterceptor.Level.BASIC
+                } else {
+                    // Never keep network metadata logging in production.
+                    HttpLoggingInterceptor.Level.NONE
+                }
             }
         )
         .build()

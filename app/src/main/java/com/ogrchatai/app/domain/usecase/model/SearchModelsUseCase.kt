@@ -1,12 +1,11 @@
 package com.ogrchatai.app.domain.usecase.model
 
-import com.ogrchatai.app.domain.model.HuggingFaceModel
+import android.util.Log
 import com.ogrchatai.app.domain.model.ModelFilter
 import com.ogrchatai.app.domain.model.ModelInfo
 import com.ogrchatai.app.domain.model.SearchResult
-import com.ogrchatai.app.domain.model.Sibling
 import com.ogrchatai.app.domain.repository.ModelRepository
-import com.ogrchatai.app.util.ModelCompatibility
+import kotlinx.coroutines.CancellationException
 import javax.inject.Inject
 
 class SearchModelsUseCase @Inject constructor(
@@ -15,8 +14,7 @@ class SearchModelsUseCase @Inject constructor(
     suspend operator fun invoke(
         query: String,
         page: Int = 1,
-        filters: ModelFilter = ModelFilter(),
-        deviceRamMb: Long = 0L
+        filters: ModelFilter = ModelFilter()
     ): Result<SearchResult> {
         if (query.isBlank()) {
             return Result.success(SearchResult(models = emptyList(), hasMore = false))
@@ -40,33 +38,11 @@ class SearchModelsUseCase @Inject constructor(
             // HuggingFace's search endpoint already applies the `gguf` filter but usually omits
             // the file list from its response. Do not discard those results merely because
             // siblings are absent; file names are resolved later from the model info endpoint.
-
-            // Chat models only. Audio/embedding/vision repositories can contain a GGUF file
-            // but are not useful in this text-only chat app. A missing pipeline tag is kept
-            // because many community GGUF repositories do not declare one.
-            models = models.filter { model ->
-                model.pipelineTag == null || model.pipelineTag == "text-generation"
-            }
-
-            if (deviceRamMb > 0) {
-                models = models.filter { model ->
-                    ModelCompatibility.isLikelyCompatible(
-                        modelName = "${model.id} ${model.name} ${model.tags.joinToString(" ")}",
-                        deviceRamMb = deviceRamMb
-                    )
-                }
-            }
-
-            val quantization = filters.quantization
-            if (quantization != null) {
-                models = models.filter { model ->
-                    model.quantizationTags.any { tag ->
-                        tag.contains(quantization, ignoreCase = true)
-                    } || model.siblings.any { sib ->
-                        sib.rfilename.contains(quantization, ignoreCase = true)
-                    }
-                }
-            }
+            //
+            // Do not filter by pipeline tag or estimated RAM here. The search endpoint is the
+            // source of truth for what exists; hiding results based on a name-derived parameter
+            // estimate made valid repositories invisible. The card can still show an advisory
+            // memory warning, but search, download and load are not blocked by it.
 
             val architecture = filters.architecture
             if (architecture != null) {
@@ -95,6 +71,13 @@ class SearchModelsUseCase @Inject constructor(
                 models = pagedModels,
                 hasMore = startIndex + pageSize < models.size
             )
+        }.onFailure { throwable ->
+            if (throwable is CancellationException) throw throwable
+            Log.e(TAG, "Model search failed for \"$query\"", throwable)
         }
+    }
+
+    private companion object {
+        const val TAG = "SearchModelsUseCase"
     }
 }

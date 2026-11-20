@@ -4,7 +4,6 @@ package com.ogrchatai.app.domain.model
 data class NeuralVoiceStatus(
     val isInstalled: Boolean = false,
     val isDownloading: Boolean = false,
-    val isExtracting: Boolean = false,
     val progress: Float = 0f,
     val downloadedBytes: Long = 0L,
     val totalBytes: Long = 0L,

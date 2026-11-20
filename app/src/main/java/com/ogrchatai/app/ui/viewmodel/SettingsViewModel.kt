@@ -82,6 +82,7 @@ class SettingsViewModel @Inject constructor(
     val events: SharedFlow<SettingsEvent> = _events.asSharedFlow()
 
     private var downloadJob: Job? = null
+    private var voiceSettingsNormalized = false
 
     init {
         observeSettings()
@@ -94,14 +95,19 @@ class SettingsViewModel @Inject constructor(
 
             getSettingsUseCase()
                 .onEach { settings ->
+                    val normalized = normalizeVoiceSettings(settings)
+                    if (normalized != settings && !voiceSettingsNormalized) {
+                        voiceSettingsNormalized = true
+                        updateSettingsUseCase(normalized)
+                    }
                     _uiState.update {
                         it.copy(
-                            language = settings.language,
-                            theme = settings.theme,
-                            generationConfig = settings.generationConfig,
-                            voiceGender = settings.voiceGender,
-                            ttsEngine = settings.ttsEngine,
-                            ttsVoice = settings.ttsVoice,
+                            language = normalized.language,
+                            theme = normalized.theme,
+                            generationConfig = normalized.generationConfig,
+                            voiceGender = normalized.voiceGender,
+                            ttsEngine = normalized.ttsEngine,
+                            ttsVoice = normalized.ttsVoice,
                             isLoading = false,
                             error = null
                         )
@@ -225,6 +231,7 @@ class SettingsViewModel @Inject constructor(
                     _uiState.update {
                         it.copy(
                             ttsEngine = TtsEngine.AUTO,
+                            ttsVoice = TtsVoice.forGender(it.voiceGender),
                             neuralVoice = neuralVoiceRepository.status.value
                         )
                     }
@@ -247,7 +254,7 @@ class SettingsViewModel @Inject constructor(
             textToSpeechManager.shutdownNeural()
             neuralVoiceRepository.deleteModel()
                 .onSuccess {
-                    _uiState.update { it.copy(ttsEngine = TtsEngine.AUTO) }
+                    _uiState.update { it.copy(ttsEngine = TtsEngine.SYSTEM) }
                     persistCurrentSettings()
                     _events.emit(SettingsEvent.ShowMessage("Neural voices were removed"))
                 }
@@ -289,6 +296,18 @@ class SettingsViewModel @Inject constructor(
                     )
                 }
         }
+    }
+
+    /**
+     * Older builds allowed choosing a fallback gender while the neural pack was
+     * not installed. After installing the pack, the stored neural voice could
+     * therefore disagree with the stored gender. The gender was the explicit
+     * user choice in that flow, so bring the neural voice in line with it.
+     */
+    private fun normalizeVoiceSettings(settings: AppSettings): AppSettings {
+        if (!neuralVoiceRepository.status.value.isInstalled) return settings
+        if (settings.ttsVoice.gender == settings.voiceGender) return settings
+        return settings.copy(ttsVoice = TtsVoice.forGender(settings.voiceGender))
     }
 
     private fun persistCurrentSettings() {
@@ -354,5 +373,8 @@ class SettingsViewModel @Inject constructor(
     override fun onCleared() {
         super.onCleared()
         downloadJob?.cancel()
+        // A neural preview loads ~139 MB of model weights. Release them when
+        // the user leaves Settings so they do not compete with the chat model.
+        textToSpeechManager.shutdownNeural()
     }
 }

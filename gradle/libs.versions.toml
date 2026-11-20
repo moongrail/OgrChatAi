@@ -24,7 +24,6 @@ documentfile = "1.1.0"
 activityKtx = "1.13.0"
 lifecycleViewmodelCompose = "2.11.0"
 securityCrypto = "1.1.0"
-commonsCompress = "1.28.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -77,7 +76,6 @@ androidx-datastore-preferences = { group = "androidx.datastore", name = "datasto
 androidx-security-crypto = { group = "androidx.security", name = "security-crypto", version.ref = "securityCrypto" }
 
 # Archive extraction (Supertonic model download)
-commons-compress = { group = "org.apache.commons", name = "commons-compress", version.ref = "commonsCompress" }
 
 # Coroutines
 kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android", version.ref = "coroutines" }

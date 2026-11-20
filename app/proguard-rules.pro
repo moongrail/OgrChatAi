@@ -107,7 +107,11 @@
 # =========================
 # sherpa-onnx reaches Kotlin/Java objects from JNI; names must stay stable.
 -keep class com.k2fsa.sherpa.onnx.** { *; }
--keepclasseswithmembernames class * {
+
+# AiKit's libai-chat.so looks up LlamaCppEngine and its native methods by
+# name. Keep the whole small library to avoid release-only JNI failures.
+-keep class com.hazratbilal.aikit.** { *; }
+-keepclasseswithmembernames,includedescriptorclasses class * {
     native <methods>;
 }
 

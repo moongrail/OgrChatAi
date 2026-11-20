@@ -4,10 +4,13 @@ import android.content.Context
 import android.util.Log
 import com.hazratbilal.aikit.core.AiKitEngine
 import com.hazratbilal.aikit.core.InternalAiKitApi
+import com.hazratbilal.aikit.core.engine.LlmEngine
 import com.hazratbilal.aikit.core.model.LlmRequest
+import com.ogrchatai.app.util.DeviceMemory
 import com.ogrchatai.app.util.ReasoningTagParser
 import com.ogrchatai.app.util.TokenEstimator
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
@@ -91,6 +94,19 @@ class InferenceEngine @Inject constructor(
                         )
                     }
 
+                    // The RAM budget is advisory only: the user may explicitly
+                    // install a model larger than the recommendation. Let the
+                    // native loader try instead of rejecting the model here.
+                    val advisoryLimit = DeviceMemory.maxModelBytes(context)
+                    if (file.length() > advisoryLimit) {
+                        Log.w(
+                            TAG,
+                            "Model is larger than the advisory memory budget " +
+                                "(${file.length() / (1024L * 1024L)} MB > " +
+                                "${advisoryLimit / (1024L * 1024L)} MB); loading anyway"
+                        )
+                    }
+
                     // Only one llama.cpp engine can be active at a time. If a chat model is
                     // already loaded, stop it and free its native memory before loading the
                     // model requested by voice-call (or vice versa).
@@ -102,9 +118,10 @@ class InferenceEngine @Inject constructor(
                         try {
                             aiKitEngine?.unloadModel()
                         } catch (_: Exception) {
-                            // The old engine may already be released.
+                            // The old engine may already be released or be in
+                            // an error state. ModelManager resets error states
+                            // without touching the new model.
                         }
-                        aiKitEngine = null
                         currentModelId = null
                         loadedModels.clear()
                         clearConversationState()
@@ -112,13 +129,22 @@ class InferenceEngine @Inject constructor(
 
                     Log.d(TAG, "Loading model via AiKit: $modelId from $filePath (${file.length() / (1024 * 1024)}MB)")
 
-                    val engine = AiKitEngine.create(context)
-                    aiKitEngine = engine
+                    // AiKitEngine is a thin wrapper around one process-wide
+                    // LlamaCppEngine singleton. Reusing the wrapper keeps its
+                    // ModelManager bookkeeping in sync with the native engine.
+                    val engine = aiKitEngine ?: AiKitEngine.create(context).also {
+                        aiKitEngine = it
+                    }
 
                     val loadResult = loadModelBlocking(engine, filePath)
 
                     if (loadResult.isFailure) {
                         Log.e(TAG, "AiKit loadModel failed: ${loadResult.exceptionOrNull()?.message}")
+                        runCatching { engine.unloadModel() }
+                            .onFailure { Log.w(TAG, "Failed to reset AiKit after load error", it) }
+                        currentModelId = null
+                        loadedModels.clear()
+                        clearConversationState()
                         return@withContext Result.failure(loadResult.exceptionOrNull()!!)
                     }
 
@@ -135,9 +161,20 @@ class InferenceEngine @Inject constructor(
                     Result.success(loadedModel)
                 } catch (e: OutOfMemoryError) {
                     Log.e(TAG, "Out of memory loading model: $modelId", e)
+                    runCatching { aiKitEngine?.unloadModel() }
+                    currentModelId = null
+                    loadedModels.clear()
+                    clearConversationState()
                     Result.failure(RuntimeException("Out of memory: ${e.message}"))
+                } catch (e: CancellationException) {
+                    Log.d(TAG, "Model load cancelled: $modelId")
+                    throw e
                 } catch (e: Exception) {
                     Log.e(TAG, "Failed to load model: $modelId", e)
+                    runCatching { aiKitEngine?.unloadModel() }
+                    currentModelId = null
+                    loadedModels.clear()
+                    clearConversationState()
                     Result.failure(e)
                 }
             }
@@ -170,6 +207,39 @@ class InferenceEngine @Inject constructor(
                 Log.d(TAG, "AiKit: Model unloaded")
             }
         })
+    }
+
+    /**
+     * Clears the native KV cache and chat history without reloading the GGUF
+     * file. AiKit exposes no public reset that keeps the model in memory, but
+     * its native processSystemPrompt() performs exactly this reset. The private
+     * flag only guards the public Kotlin entry point, so setting it temporarily
+     * is safe and is covered by the AiKit ProGuard keep rules.
+     */
+    @OptIn(InternalAiKitApi::class)
+    private suspend fun resetNativeConversation(engine: AiKitEngine, seed: String): Boolean {
+        if (seed.isBlank()) return false
+        return try {
+            val manager = engine.modelManager
+            val llmField = manager.javaClass.getDeclaredField("llmEngine").apply {
+                isAccessible = true
+            }
+            val llm = llmField.get(manager) as? LlmEngine ?: return false
+            if (llm.state.value !is LlmEngine.State.ModelReady) return false
+
+            val readyField = llm.javaClass.getDeclaredField("_readyForSystemPrompt").apply {
+                isAccessible = true
+            }
+            readyField.setBoolean(llm, true)
+            llm.setSystemPrompt(seed)
+            Log.d(TAG, "Native context reset in place (no model reload)")
+            true
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            Log.w(TAG, "In-place context reset failed", e)
+            false
+        }
     }
 
     @OptIn(InternalAiKitApi::class)
@@ -223,10 +293,6 @@ class InferenceEngine @Inject constructor(
 
         var appliedSystemPrompt: String? = null
         if (needsReset) {
-            if (conversationInitialized && engine.isModelLoaded()) {
-                Log.d(TAG, "Compacting conversation context for $key")
-                engine.modelManager.resetConversation()
-            }
             val seed = if (contextSeed.isBlank()) {
                 systemPrompt.trim()
             } else {
@@ -239,6 +305,20 @@ class InferenceEngine @Inject constructor(
                     appendLine()
                     append(BACKGROUND_ONLY_RULES)
                 }.trim()
+            }
+            if (conversationInitialized && engine.isModelLoaded()) {
+                Log.d(TAG, "Compacting conversation context for $key")
+                // processSystemPrompt() already clears the native KV cache
+                // and the chat history. Calling ModelManager.resetConversation()
+                // here would unload and reload the whole multi-gigabyte model
+                // just to clear the cache, causing a long freeze and a second
+                // native load. Use the cheap reset when possible and fall back
+                // to a reload only if AiKit's private flag cannot be reached.
+                val resetInPlace = resetNativeConversation(engine, seed)
+                if (!resetInPlace) {
+                    Log.w(TAG, "In-place context reset unavailable; reloading model")
+                    engine.modelManager.resetConversation()
+                }
             }
             appliedSystemPrompt = seed.ifBlank { null }
             activeConversationKey = key
@@ -333,16 +413,17 @@ class InferenceEngine @Inject constructor(
     }
 
     fun cancelGeneration() {
+        // Do not clear isGenerating here. The flow's finally block clears it
+        // after the native loop observes cancellation, which prevents a new
+        // request from racing a still-running llama.cpp generation.
         activeGenerationJob?.cancel()
         activeGenerationJob = null
-        isGenerating.set(false)
-        loadedModels.values.forEach { it.isInUse = false }
     }
 
     fun unloadModel(modelId: String) {
         if (currentModelId == modelId) {
-            aiKitEngine?.unloadModel()
-            aiKitEngine = null
+            runCatching { aiKitEngine?.unloadModel() }
+                .onFailure { Log.w(TAG, "Failed to unload model $modelId", it) }
             currentModelId = null
             clearConversationState()
         }
@@ -357,9 +438,9 @@ class InferenceEngine @Inject constructor(
         try {
             aiKitEngine?.unloadModel()
         } catch (_: Exception) {
-            // Ignore unload errors during shutdown.
+            // Ignore unload errors during shutdown. Keep the wrapper: its
+            // ModelManager is reused for the next load.
         }
-        aiKitEngine = null
         currentModelId = null
         loadedModels.clear()
         clearConversationState()

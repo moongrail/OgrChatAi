@@ -5,6 +5,49 @@ All notable changes to OgrChatAi will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- Supertonic 3 voices are now downloaded as seven individual files from a
+  pinned HuggingFace revision. The archive and unpack stage is gone, so setup
+  shows real download progress instead of appearing stuck while unpacking.
+- Settings now shows one explicit active voice. Fallback gender controls are
+  hidden when the neural voice speaks, and neural selection is disabled when
+  the Android system engine is forced.
+- The voice-call screen names both the model that writes the answer and the
+  voice that actually speaks it.
+- Interrupted model downloads now keep a resumable `.part` file and continue
+  with an HTTP Range request instead of downloading several gigabytes again.
+- Clearing chat memory resets the native KV cache in place instead of reloading
+  the whole GGUF file.
+- Model Browser search no longer hides GGUF repositories because of a RAM or
+  pipeline-tag estimate, and every non-blank query triggers a search. The
+  nonfunctional quantization filter was removed.
+- Model installation and loading are no longer blocked by the advisory RAM
+  budget; a warning is shown, but the user decides whether to continue.
+
+### Fixed
+
+- Supertonic setup no longer runs a slow, cancellation-unaware bzip2 unpacker
+  that could keep consuming CPU and slow down model replies after leaving
+  Settings.
+- Neural TTS native resources are now released after previews and calls,
+  freeing roughly 145 MB instead of leaving the model loaded.
+- Model downloads now continue after leaving the Model Browser and their
+  progress is restored when the screen is opened again.
+- Release builds no longer abort on Gemma 4's `<|turn>` chat template because
+  the bundled llama.cpp formatter is patched to use Jinja at build time.
+- Gemma 4 thinking-channel output is separated from the final answer and shown
+  as reasoning instead of being mixed into the reply.
+- Stop generation now cancels the native generation loop, keeping the next
+  request from racing a dead native generation.
+- Existing mismatched fallback-gender and neural-voice settings are normalized
+  so the voice shown in Settings is the one that speaks.
+- Model search no longer fails when HuggingFace omits `siblings` or `tags` from
+  the search response; such fields are treated as empty instead of causing a
+  null-pointer exception.
+
 ## [1.1.0] - 2026-11-14
 
 ### Added

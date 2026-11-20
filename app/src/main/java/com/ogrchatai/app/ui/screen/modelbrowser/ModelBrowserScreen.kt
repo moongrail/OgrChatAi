@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -32,12 +33,14 @@ import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LargeTopAppBar
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SearchBar
 import androidx.compose.material3.SearchBarDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
@@ -50,20 +53,18 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import com.ogrchatai.app.domain.model.ModelDownloadState
 import com.ogrchatai.app.ui.components.EmptyStateView
 import com.ogrchatai.app.ui.components.LoadingIndicator
 import com.ogrchatai.app.ui.components.ModelChip
 import com.ogrchatai.app.ui.viewmodel.ModelBrowserAction
 import com.ogrchatai.app.ui.viewmodel.ModelBrowserViewModel
-
-private val QUANTIZATION_FILTERS = listOf(
-    "Q4_K_M", "Q5_K_M", "Q8_0", "F16", "F32", "Q4_0", "Q5_0"
-)
 
 private val ARCHITECTURE_FILTERS = listOf(
     "llama", "mistral", "gemma", "phi", "qwen"
@@ -77,6 +78,7 @@ fun ModelBrowserScreen(
     viewModel: ModelBrowserViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val activeDownloads = uiState.downloadState.values.filter { it.isDownloading }
     var searchQuery by remember { mutableStateOf("") }
     var activeSearch by remember { mutableStateOf(false) }
     var showFilters by remember { mutableStateOf(false) }
@@ -85,10 +87,14 @@ fun ModelBrowserScreen(
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val listState = rememberLazyListState()
 
-    // The Material3 SearchBar uses an overlay while active. Once results arrive, collapse it so
-    // the compatible models are actually visible instead of an empty suggestion surface.
-    LaunchedEffect(uiState.searchResults.size, uiState.isLoading) {
-        if (activeSearch && !uiState.isLoading && uiState.searchResults.isNotEmpty()) {
+    // The Material3 SearchBar uses an overlay while active. Once a search finishes, collapse
+    // it so results, an error, or the empty state are visible instead of a blank surface.
+    LaunchedEffect(uiState.searchResults.size, uiState.isLoading, uiState.error) {
+        if (activeSearch && !uiState.isLoading &&
+            (uiState.searchResults.isNotEmpty() ||
+                uiState.error != null ||
+                uiState.searchQuery.isNotBlank())
+        ) {
             activeSearch = false
             keyboardController?.hide()
         }
@@ -181,7 +187,7 @@ fun ModelBrowserScreen(
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp),
                 placeholder = {
-                    Text("Search GGUF models (e.g. TinyLlama, Mistral...)")
+                    Text("Search GGUF models (e.g. Qwen, Gemma, Mistral...)")
                 },
                 leadingIcon = {
                     Icon(
@@ -217,50 +223,6 @@ fun ModelBrowserScreen(
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp, vertical = 4.dp)
                 ) {
-                    Text(
-                        text = "Quantization",
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    FlowRow(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        QUANTIZATION_FILTERS.forEach { quant ->
-                            val isSelected = uiState.filters.quantization == quant
-                            FilterChip(
-                                selected = isSelected,
-                                onClick = {
-                                    if (isSelected) {
-                                        viewModel.onAction(ModelBrowserAction.ClearFilters)
-                                    } else {
-                                        viewModel.onAction(
-                                            ModelBrowserAction.UpdateFilter(
-                                                uiState.filters.copy(quantization = quant)
-                                            )
-                                        )
-                                    }
-                                },
-                                label = {
-                                    Text(
-                                        text = quant,
-                                        style = MaterialTheme.typography.labelSmall,
-                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
-                                    )
-                                },
-                                colors = FilterChipDefaults.filterChipColors(
-                                    selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                                    selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
-                                ),
-                                shape = RoundedCornerShape(12.dp)
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(8.dp))
                     Text(
                         text = "Architecture",
                         style = MaterialTheme.typography.labelMedium,
@@ -306,6 +268,15 @@ fun ModelBrowserScreen(
                 }
             }
 
+            if (activeDownloads.isNotEmpty()) {
+                ActiveDownloadsCard(
+                    downloads = activeDownloads,
+                    onCancelAll = {
+                        viewModel.onAction(ModelBrowserAction.CancelAllDownloads)
+                    }
+                )
+            }
+
             if (uiState.searchResults.isNotEmpty()) {
                 Surface(
                     modifier = Modifier
@@ -336,10 +307,19 @@ fun ModelBrowserScreen(
                     )
                 }
                 uiState.searchResults.isEmpty() -> {
+                    val trimmedQuery = uiState.searchQuery.trim()
                     EmptyStateView(
                         icon = Icons.Filled.Search,
-                        title = "Search for GGUF models",
-                        subtitle = "Type at least 2 characters to search HuggingFace.\nOnly GGUF models that likely fit your device RAM are shown."
+                        title = if (trimmedQuery.isNotEmpty()) {
+                            "No GGUF models found"
+                        } else {
+                            "Search for GGUF models"
+                        },
+                        subtitle = if (trimmedQuery.isNotEmpty()) {
+                            "Nothing matched \"$trimmedQuery\". Try a shorter or different query."
+                        } else {
+                            "Enter a model name, author, or architecture."
+                        }
                     )
                 }
                 else -> {
@@ -399,6 +379,59 @@ fun ModelBrowserScreen(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun ActiveDownloadsCard(
+    downloads: List<ModelDownloadState>,
+    onCancelAll: () -> Unit
+) {
+    val first = downloads.first()
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 4.dp),
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = if (downloads.size == 1) {
+                            "Downloading ${first.modelName}"
+                        } else {
+                            "${downloads.size} models downloading"
+                        },
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        text = "${(first.progress * 100).toInt()}%" +
+                            if (downloads.size > 1) " • ${first.modelName} +${downloads.size - 1} more" else "",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                TextButton(onClick = onCancelAll) {
+                    Text("Cancel all")
+                }
+            }
+            Spacer(modifier = Modifier.height(6.dp))
+            LinearProgressIndicator(
+                progress = { first.progress.coerceIn(0f, 1f) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(6.dp)
+                    .clip(RoundedCornerShape(3.dp)),
+                color = MaterialTheme.colorScheme.primary,
+                trackColor = MaterialTheme.colorScheme.surfaceVariant
+            )
         }
     }
 }

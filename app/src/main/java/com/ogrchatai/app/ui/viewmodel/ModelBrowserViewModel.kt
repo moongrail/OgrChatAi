@@ -1,14 +1,15 @@
 package com.ogrchatai.app.ui.viewmodel
 
-import android.app.ActivityManager
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.ogrchatai.app.domain.model.ModelInfo
+import com.ogrchatai.app.data.download.ModelDownloadManager
+import com.ogrchatai.app.domain.model.ModelDownloadState
 import com.ogrchatai.app.domain.model.ModelFilter
+import com.ogrchatai.app.domain.model.ModelInfo
 import com.ogrchatai.app.domain.repository.ModelRepository
-import com.ogrchatai.app.domain.usecase.model.DownloadModelUseCase
 import com.ogrchatai.app.domain.usecase.model.SearchModelsUseCase
+import com.ogrchatai.app.util.DeviceMemory
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Job
@@ -21,7 +22,6 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import java.io.File
 import javax.inject.Inject
 
 data class ModelBrowserUiState(
@@ -33,19 +33,9 @@ data class ModelBrowserUiState(
     val filters: ModelFilter = ModelFilter(),
     val currentPage: Int = 1,
     val hasMore: Boolean = true,
-    val downloadState: Map<String, DownloadState> = emptyMap(),
+    val downloadState: Map<String, ModelDownloadState> = emptyMap(),
     val downloadedModelIds: Set<String> = emptySet(),
     val deviceRamMb: Long = 0L
-)
-
-data class DownloadState(
-    val progress: Float = 0f,
-    val isDownloading: Boolean = false,
-    val isComplete: Boolean = false,
-    val error: String? = null,
-    val downloadedBytes: Long = 0L,
-    val totalBytes: Long = 0L,
-    val speedBytesPerSec: Long = 0L
 )
 
 sealed interface ModelBrowserEvent {
@@ -61,6 +51,7 @@ sealed interface ModelBrowserAction {
     data object LoadMore : ModelBrowserAction
     data class DownloadModel(val modelId: String) : ModelBrowserAction
     data class CancelDownload(val modelId: String) : ModelBrowserAction
+    data object CancelAllDownloads : ModelBrowserAction
     data class UpdateFilter(val filter: ModelFilter) : ModelBrowserAction
     data object ClearFilters : ModelBrowserAction
 }
@@ -69,7 +60,7 @@ sealed interface ModelBrowserAction {
 class ModelBrowserViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     private val searchModelsUseCase: SearchModelsUseCase,
-    private val downloadModelUseCase: DownloadModelUseCase,
+    private val downloadManager: ModelDownloadManager,
     private val modelRepository: ModelRepository
 ) : ViewModel() {
 
@@ -79,8 +70,8 @@ class ModelBrowserViewModel @Inject constructor(
     private val _events = MutableSharedFlow<ModelBrowserEvent>()
     val events: SharedFlow<ModelBrowserEvent> = _events.asSharedFlow()
 
-    private val _downloadJobs = mutableMapOf<String, Job>()
     private var searchJob: Job? = null
+    private var loadMoreJob: Job? = null
 
     companion object {
         private const val DEBOUNCE_MS = 500L
@@ -89,22 +80,29 @@ class ModelBrowserViewModel @Inject constructor(
     init {
         loadDeviceRam()
         observeDownloadedModels()
+        observeDownloads()
     }
 
     private fun loadDeviceRam() {
-        val am = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
-        val memInfo = ActivityManager.MemoryInfo()
-        am?.getMemoryInfo(memInfo)
-        val totalRamMb = memInfo.totalMem / (1024 * 1024)
-        _uiState.update { it.copy(deviceRamMb = totalRamMb) }
+        _uiState.update { it.copy(deviceRamMb = DeviceMemory.totalRamMb(context)) }
     }
 
     private fun observeDownloadedModels() {
         viewModelScope.launch {
             modelRepository.getDownloadedModels().collect { models ->
+                val downloadedIds = models.map { m -> m.id }.toSet()
+                downloadManager.retainCompleted(downloadedIds)
                 _uiState.update {
-                    it.copy(downloadedModelIds = models.map { m -> m.id }.toSet())
+                    it.copy(downloadedModelIds = downloadedIds)
                 }
+            }
+        }
+    }
+
+    private fun observeDownloads() {
+        viewModelScope.launch {
+            downloadManager.downloads.collect { downloads ->
+                _uiState.update { it.copy(downloadState = downloads) }
             }
         }
     }
@@ -115,7 +113,8 @@ class ModelBrowserViewModel @Inject constructor(
             is ModelBrowserAction.Search -> search()
             is ModelBrowserAction.LoadMore -> loadMore()
             is ModelBrowserAction.DownloadModel -> downloadModel(action.modelId)
-            is ModelBrowserAction.CancelDownload -> cancelDownload(action.modelId)
+            is ModelBrowserAction.CancelDownload -> downloadManager.cancel(action.modelId)
+            ModelBrowserAction.CancelAllDownloads -> downloadManager.cancelAll()
             is ModelBrowserAction.UpdateFilter -> updateFilter(action.filter)
             is ModelBrowserAction.ClearFilters -> clearFilters()
         }
@@ -124,10 +123,18 @@ class ModelBrowserViewModel @Inject constructor(
     private fun updateSearchQuery(query: String) {
         _uiState.update { it.copy(searchQuery = query) }
         searchJob?.cancel()
-        if (query.trim().length >= 2) {
+        if (query.isNotBlank()) {
             searchJob = viewModelScope.launch {
                 delay(DEBOUNCE_MS)
-                search()
+                performSearch(
+                    query = _uiState.value.searchQuery.trim(),
+                    filters = _uiState.value.filters
+                )
+            }
+        } else {
+            loadMoreJob?.cancel()
+            _uiState.update {
+                it.copy(searchResults = emptyList(), isLoading = false, error = null)
             }
         }
     }
@@ -135,65 +142,84 @@ class ModelBrowserViewModel @Inject constructor(
     private fun search() {
         val state = _uiState.value
         val query = state.searchQuery.trim()
+        searchJob?.cancel()
         if (query.isEmpty()) {
+            loadMoreJob?.cancel()
             _uiState.update { it.copy(searchResults = emptyList(), error = null) }
             return
         }
 
-        viewModelScope.launch {
-            _uiState.update {
-                it.copy(
-                    isLoading = true,
-                    error = null,
-                    currentPage = 1,
-                    hasMore = true
-                )
-            }
-
-            searchModelsUseCase(
-                query = query,
-                page = 1,
-                filters = state.filters,
-                deviceRamMb = state.deviceRamMb
-            )
-                .onSuccess { result ->
-                    _uiState.update {
-                        it.copy(
-                            searchResults = result.models,
-                            isLoading = false,
-                            hasMore = result.hasMore,
-                            currentPage = 1
-                        )
-                    }
-                }
-                .onFailure { throwable ->
-                    _uiState.update {
-                        it.copy(
-                            isLoading = false,
-                            error = throwable.message ?: "Search failed"
-                        )
-                    }
-                    _events.emit(ModelBrowserEvent.ShowError(throwable.message ?: "Search failed"))
-                }
+        searchJob = viewModelScope.launch {
+            performSearch(query, state.filters)
         }
+    }
+
+    /**
+     * Runs one search on the already-cancelled [searchJob]. Keeping the network
+     * request inside the debounce job prevents stale responses from an older
+     * query from overwriting the current result list.
+     */
+    private suspend fun performSearch(
+        query: String,
+        filters: ModelFilter
+    ) {
+        if (query.isBlank()) return
+        loadMoreJob?.cancel()
+        _uiState.update {
+            it.copy(
+                isLoading = true,
+                error = null,
+                currentPage = 1,
+                hasMore = true
+            )
+        }
+
+        searchModelsUseCase(
+            query = query,
+            page = 1,
+            filters = filters
+        )
+            .onSuccess { result ->
+                if (_uiState.value.searchQuery.trim() != query) return@onSuccess
+                _uiState.update {
+                    it.copy(
+                        searchResults = result.models,
+                        isLoading = false,
+                        hasMore = result.hasMore,
+                        currentPage = 1
+                    )
+                }
+            }
+            .onFailure { throwable ->
+                if (throwable is kotlinx.coroutines.CancellationException) throw throwable
+                if (_uiState.value.searchQuery.trim() != query) return@onFailure
+                _uiState.update {
+                    it.copy(
+                        isLoading = false,
+                        error = throwable.message ?: "Search failed"
+                    )
+                }
+                _events.emit(ModelBrowserEvent.ShowError(throwable.message ?: "Search failed"))
+            }
     }
 
     private fun loadMore() {
         val state = _uiState.value
-        if (state.isLoadingMore || !state.hasMore) return
+        if (state.isLoading || state.isLoadingMore || !state.hasMore) return
 
+        val query = state.searchQuery.trim()
         val nextPage = state.currentPage + 1
-
-        viewModelScope.launch {
+        loadMoreJob?.cancel()
+        loadMoreJob = viewModelScope.launch {
             _uiState.update { it.copy(isLoadingMore = true) }
 
             searchModelsUseCase(
-                query = state.searchQuery,
+                query = query,
                 page = nextPage,
-                filters = state.filters,
-                deviceRamMb = state.deviceRamMb
+                filters = state.filters
             )
                 .onSuccess { result ->
+                    if (_uiState.value.searchQuery.trim() != query) return@onSuccess
                     _uiState.update {
                         it.copy(
                             searchResults = it.searchResults + result.models,
@@ -204,6 +230,8 @@ class ModelBrowserViewModel @Inject constructor(
                     }
                 }
                 .onFailure { throwable ->
+                    if (throwable is kotlinx.coroutines.CancellationException) throw throwable
+                    if (_uiState.value.searchQuery.trim() != query) return@onFailure
                     _uiState.update {
                         it.copy(
                             isLoadingMore = false,
@@ -216,77 +244,16 @@ class ModelBrowserViewModel @Inject constructor(
 
     private fun downloadModel(modelId: String) {
         val state = _uiState.value
-        if (state.downloadState[modelId]?.isDownloading == true) return
+        if (downloadManager.isDownloading(modelId)) return
 
-        val estimatedSizeMb = state.searchResults.find { it.id == modelId }?.totalSize?.div(1024 * 1024) ?: 0L
-        val availableRamMb = state.deviceRamMb * 0.75
-        if (estimatedSizeMb > availableRamMb && estimatedSizeMb > 0) {
-            viewModelScope.launch {
-                _events.emit(ModelBrowserEvent.ShowSnackbar("Model (~${estimatedSizeMb}MB) may exceed available RAM (${state.deviceRamMb}MB)"))
-            }
-        }
+        val model = state.searchResults.find { it.id == modelId }
+        val estimatedSizeBytes = model?.estimatedDownloadSize ?: 0L
 
-        _uiState.update { currentState ->
-            currentState.copy(
-                downloadState = currentState.downloadState + (modelId to DownloadState(isDownloading = true))
-            )
-        }
-
-        val startTime = System.currentTimeMillis()
-        val job = viewModelScope.launch {
-            downloadModelUseCase(modelId)
-                .collect { result ->
-                    result.onSuccess { progress ->
-                        val elapsed = (System.currentTimeMillis() - startTime) / 1000.0f
-                        val speed = if (elapsed > 0) (progress * (estimatedSizeMb * 1024 * 1024) / elapsed).toLong() else 0L
-
-                        if (progress >= 1f) {
-                            _uiState.update { currentState ->
-                                currentState.copy(
-                                    downloadState = currentState.downloadState + (modelId to DownloadState(
-                                        progress = 1f,
-                                        isDownloading = false,
-                                        isComplete = true
-                                    ))
-                                )
-                            }
-                            _events.emit(ModelBrowserEvent.DownloadComplete(modelId))
-                        } else {
-                            _uiState.update { currentState ->
-                                currentState.copy(
-                                    downloadState = currentState.downloadState + (modelId to DownloadState(
-                                        progress = progress,
-                                        isDownloading = true,
-                                        speedBytesPerSec = speed
-                                    ))
-                                )
-                            }
-                        }
-                    }
-                    result.onFailure { throwable ->
-                        _uiState.update { currentState ->
-                            currentState.copy(
-                                downloadState = currentState.downloadState + (modelId to DownloadState(
-                                    isDownloading = false,
-                                    error = throwable.message ?: "Download failed"
-                                ))
-                            )
-                        }
-                        _events.emit(ModelBrowserEvent.DownloadFailed(modelId, throwable.message ?: "Download failed"))
-                    }
-                }
-        }
-        _downloadJobs[modelId] = job
-    }
-
-    private fun cancelDownload(modelId: String) {
-        _downloadJobs[modelId]?.cancel()
-        _downloadJobs.remove(modelId)
-        _uiState.update { currentState ->
-            currentState.copy(
-                downloadState = currentState.downloadState - modelId
-            )
-        }
+        downloadManager.start(
+            modelId = modelId,
+            modelName = model?.name ?: modelId.substringAfter('/'),
+            estimatedSizeBytes = estimatedSizeBytes
+        )
     }
 
     private fun updateFilter(filter: ModelFilter) {
@@ -299,11 +266,5 @@ class ModelBrowserViewModel @Inject constructor(
             it.copy(filters = ModelFilter())
         }
         search()
-    }
-
-    override fun onCleared() {
-        super.onCleared()
-        _downloadJobs.values.forEach { it.cancel() }
-        _downloadJobs.clear()
     }
 }

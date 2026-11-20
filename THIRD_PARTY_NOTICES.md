@@ -15,7 +15,6 @@ replace or restrict those rights.
 | OkHttp and Retrofit | 5.5.1 / 3.0.0 | Apache License 2.0 |
 | Gson | 2.15.0 | Apache License 2.0 |
 | Coil 3 | 3.6.3 | Apache License 2.0 |
-| Apache Commons Compress | 1.28.0 | Apache License 2.0 |
 | sherpa-onnx | 2.0.1 (trimmed AAR in `app/libs`) | Apache License 2.0 |
 | ONNX Runtime | bundled in sherpa-onnx AAR | MIT License |
 | llama.cpp | bundled by android-ai-kit | MIT License |
@@ -27,7 +26,7 @@ The Supertonic 3 int8 model is downloaded on demand and is not included in the
 APK. It is distributed by Supertone Inc. / the sherpa-onnx project under the
 OpenRAIL-M License. By downloading the model, the user accepts that license.
 
-- Model source: https://github.com/k2-fsa/sherpa-onnx/releases/tag/tts-models
+- Model source: https://huggingface.co/csukuangfj2/sherpa-onnx-supertonic-3-tts-int8-2026-05-11
 - Model license: https://huggingface.co/Supertone/supertonic-3/blob/main/LICENSE
 - Model card / README: https://huggingface.co/Supertone/supertonic-3
 

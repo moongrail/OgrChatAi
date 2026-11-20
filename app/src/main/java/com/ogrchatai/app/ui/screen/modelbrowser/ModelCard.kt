@@ -47,13 +47,13 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.ogrchatai.app.domain.model.ModelInfo
 import com.ogrchatai.app.ui.components.ModelChip
-import com.ogrchatai.app.ui.viewmodel.DownloadState
+import com.ogrchatai.app.domain.model.ModelDownloadState
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ModelCard(
     model: ModelInfo,
-    downloadState: DownloadState?,
+    downloadState: ModelDownloadState?,
     isDownloaded: Boolean,
     deviceRamMb: Long,
     onDownloadClick: () -> Unit,
@@ -68,9 +68,9 @@ fun ModelCard(
         label = "download_progress"
     )
 
-    val modelSizeMb = model.totalSize / (1024 * 1024)
+    val modelSizeMb = model.estimatedDownloadSize / (1024 * 1024)
     val fitsInRam = if (deviceRamMb > 0 && modelSizeMb > 0) {
-        modelSizeMb < deviceRamMb * 0.75
+        modelSizeMb < deviceRamMb * 0.55
     } else null
 
     Card(
@@ -193,7 +193,7 @@ fun ModelCard(
                     icon = Icons.Filled.ThumbUp,
                     value = model.likes.toString()
                 )
-                if (model.totalSize > 0) {
+                if (model.estimatedDownloadSize > 0) {
                     StatItem(
                         icon = Icons.Filled.Memory,
                         value = model.formattedSize
@@ -287,6 +287,15 @@ fun ModelCard(
                         }
                     }
                 }
+            }
+
+            downloadState?.error?.let { error ->
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = error,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.error
+                )
             }
 
             val quantTags = model.quantizationTags

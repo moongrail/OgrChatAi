@@ -5,22 +5,22 @@ import android.os.StatFs
 import com.ogrchatai.app.domain.model.NeuralVoiceStatus
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
-import org.apache.commons.compress.compressors.bzip2.BZip2CompressorInputStream
 import java.io.File
-import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
@@ -29,9 +29,10 @@ import javax.inject.Singleton
 /**
  * Downloads and manages the Supertonic 3 int8 voice model.
  *
- * The model is deliberately not bundled into the APK: it is about 129 MB and is
- * only needed when neural speech is used. It is stored in app-private storage,
- * so no storage permission is required.
+ * The model is deliberately not bundled into the APK: it is about 139 MiB and
+ * is only needed when neural speech is used. Files are fetched individually
+ * from a pinned HuggingFace revision instead of downloading and unpacking a
+ * bzip2 archive, which was extremely slow on Android.
  */
 @Singleton
 class NeuralVoiceRepository @Inject constructor(
@@ -41,8 +42,8 @@ class NeuralVoiceRepository @Inject constructor(
     private val downloadMutex = Mutex()
     private val client = OkHttpClient.Builder()
         .connectTimeout(60, TimeUnit.SECONDS)
-        .readTimeout(0, TimeUnit.MILLISECONDS)
-        .writeTimeout(0, TimeUnit.MILLISECONDS)
+        .readTimeout(120, TimeUnit.SECONDS)
+        .writeTimeout(120, TimeUnit.SECONDS)
         .retryOnConnectionFailure(true)
         .build()
 
@@ -52,22 +53,30 @@ class NeuralVoiceRepository @Inject constructor(
     private val modelDirectory: File
         get() = File(baseDir, MODEL_DIR_NAME)
 
+    private val stagingDirectory: File
+        get() = File(baseDir, STAGING_DIR_NAME)
+
     private val _status = MutableStateFlow(
-        NeuralVoiceStatus(isInstalled = isInstalled(), totalBytes = EXPECTED_ARCHIVE_BYTES)
+        NeuralVoiceStatus(
+            isInstalled = validateModelDir(modelDirectory),
+            totalBytes = TOTAL_DOWNLOAD_BYTES
+        )
     )
     val status: StateFlow<NeuralVoiceStatus> = _status.asStateFlow()
 
     init {
-        // Remove leftovers from a previous interrupted download. This is cheap and
-        // keeps the app from accumulating hundreds of megabytes in cache.
-        runCatching {
-            File(context.cacheDir, ARCHIVE_NAME).delete()
-            File(context.cacheDir, EXTRACT_DIR_NAME).deleteRecursively()
+        // Cleanup can delete a large staging directory. It must not run on the
+        // main thread while the first screen is being composed.
+        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+            runCatching {
+                stagingDirectory.deleteRecursively()
+                File(context.cacheDir, LEGACY_ARCHIVE_NAME).delete()
+                File(context.cacheDir, LEGACY_EXTRACT_DIR_NAME).deleteRecursively()
+            }
+            _status.update {
+                it.copy(isInstalled = validateModelDir(modelDirectory))
+            }
         }
-        _status.value = NeuralVoiceStatus(
-            isInstalled = isInstalled(),
-            totalBytes = EXPECTED_ARCHIVE_BYTES
-        )
     }
 
     fun isInstalled(): Boolean = validateModelDir(modelDirectory)
@@ -95,131 +104,116 @@ class NeuralVoiceRepository @Inject constructor(
                     it.copy(
                         isInstalled = true,
                         isDownloading = false,
-                        isExtracting = false,
                         progress = 1f,
+                        downloadedBytes = TOTAL_DOWNLOAD_BYTES,
+                        totalBytes = TOTAL_DOWNLOAD_BYTES,
                         error = null
                     )
                 }
                 return@withLock Result.success(Unit)
             }
 
+            stagingDirectory.deleteRecursively()
+            // A partially installed directory cannot be used. Removing it frees
+            // space for the complete replacement.
+            if (modelDirectory.exists() && !validateModelDir(modelDirectory)) {
+                modelDirectory.deleteRecursively()
+            }
+
             if (!hasEnoughSpace()) {
-                val message = "Not enough free storage. About 300 MB is required."
+                val message = "Not enough free storage. About 200 MB is required."
                 _status.update { it.copy(error = message, isDownloading = false) }
                 return@withLock Result.failure(IllegalStateException(message))
             }
 
             _status.update {
                 it.copy(
+                    isInstalled = false,
                     isDownloading = true,
-                    isExtracting = false,
                     progress = 0f,
                     downloadedBytes = 0L,
+                    totalBytes = TOTAL_DOWNLOAD_BYTES,
                     error = null
                 )
             }
 
-            val archive = File(context.cacheDir, ARCHIVE_NAME)
-            val extractRoot = File(context.cacheDir, EXTRACT_DIR_NAME)
+            var completedBytes = 0L
             try {
-                archive.delete()
-                extractRoot.deleteRecursively()
-
-                val request = Request.Builder().url(MODEL_URL).build()
-                client.newCall(request).execute().use { response ->
-                    if (!response.isSuccessful) {
-                        error("Download failed: HTTP ${response.code}")
-                    }
-                    val body = response.body ?: error("Download failed: empty response")
-                    val total = body.contentLength().takeIf { it > 0 } ?: EXPECTED_ARCHIVE_BYTES
-                    var downloaded = 0L
-                    body.byteStream().use { input ->
-                        FileOutputStream(archive).use { output ->
-                            val buffer = ByteArray(64 * 1024)
-                            while (true) {
-                                currentCoroutineContext().ensureActive()
-                                val read = input.read(buffer)
-                                if (read < 0) break
-                                output.write(buffer, 0, read)
-                                downloaded += read
-                                _status.update {
-                                    it.copy(
-                                        progress = (downloaded.toFloat() / total).coerceIn(0f, 0.98f),
-                                        downloadedBytes = downloaded
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-
-                if (archive.length() < MIN_VALID_ARCHIVE_BYTES) {
-                    error("Downloaded model archive is incomplete")
-                }
-
-                _status.update {
-                    it.copy(
-                        isDownloading = false,
-                        isExtracting = true,
-                        progress = 0.99f
+                stagingDirectory.mkdirs()
+                for (modelFile in MODEL_FILES) {
+                    currentCoroutineContext().ensureActive()
+                    downloadFile(
+                        modelFile = modelFile,
+                        destination = File(stagingDirectory, modelFile.name),
+                        completedBytes = completedBytes
                     )
+                    val downloadedFile = File(stagingDirectory, modelFile.name)
+                    if (downloadedFile.length() != modelFile.expectedBytes) {
+                        error(
+                            "Downloaded ${modelFile.name} has an unexpected size " +
+                                "(${downloadedFile.length()} bytes, expected " +
+                                "${modelFile.expectedBytes})"
+                        )
+                    }
+                    completedBytes += modelFile.expectedBytes
+                    _status.update {
+                        it.copy(
+                            progress = (completedBytes.toFloat() / TOTAL_DOWNLOAD_BYTES)
+                                .coerceIn(0f, 0.99f),
+                            downloadedBytes = completedBytes
+                        )
+                    }
                 }
 
-                extractArchive(archive, extractRoot)
-                val extracted = findModelDir(extractRoot)
-                    ?: error("The downloaded archive does not contain the expected model files")
-                if (!validateModelDir(extracted)) {
-                    error("The downloaded model files are incomplete")
+                if (!validateModelDir(stagingDirectory)) {
+                    error("The downloaded voice model files are incomplete")
                 }
 
-                // Publish atomically enough for this purpose: remove the old copy
-                // only after a complete new copy has been extracted and validated.
+                // The staging directory lives on the same filesystem, so a
+                // rename publishes the new model atomically. Keep the old copy
+                // until every file has been downloaded and validated.
                 if (modelDirectory.exists()) modelDirectory.deleteRecursively()
                 modelDirectory.parentFile?.mkdirs()
-                if (!extracted.renameTo(modelDirectory)) {
-                    extracted.copyRecursively(modelDirectory, overwrite = true)
-                    extracted.deleteRecursively()
+                if (!stagingDirectory.renameTo(modelDirectory)) {
+                    stagingDirectory.copyRecursively(modelDirectory, overwrite = true)
+                    stagingDirectory.deleteRecursively()
                 }
 
                 if (!validateModelDir(modelDirectory)) {
                     modelDirectory.deleteRecursively()
-                    error("The downloaded model could not be installed")
+                    error("The downloaded voice model could not be installed")
                 }
 
-                archive.delete()
-                extractRoot.deleteRecursively()
                 _status.update {
                     it.copy(
                         isInstalled = true,
                         isDownloading = false,
-                        isExtracting = false,
                         progress = 1f,
-                        downloadedBytes = EXPECTED_ARCHIVE_BYTES,
+                        downloadedBytes = TOTAL_DOWNLOAD_BYTES,
+                        totalBytes = TOTAL_DOWNLOAD_BYTES,
                         error = null
                     )
                 }
                 Result.success(Unit)
             } catch (e: CancellationException) {
-                archive.delete()
-                extractRoot.deleteRecursively()
+                stagingDirectory.deleteRecursively()
                 _status.update {
                     it.copy(
+                        isInstalled = isInstalled(),
                         isDownloading = false,
-                        isExtracting = false,
                         progress = 0f,
+                        downloadedBytes = 0L,
                         error = null
                     )
                 }
                 throw e
             } catch (e: Exception) {
-                archive.delete()
-                extractRoot.deleteRecursively()
+                stagingDirectory.deleteRecursively()
                 val message = e.message ?: "Failed to download the neural voice"
                 _status.update {
                     it.copy(
                         isInstalled = isInstalled(),
                         isDownloading = false,
-                        isExtracting = false,
                         error = message
                     )
                 }
@@ -231,12 +225,13 @@ class NeuralVoiceRepository @Inject constructor(
     suspend fun deleteModel(): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
             modelDirectory.deleteRecursively()
-            File(context.cacheDir, ARCHIVE_NAME).delete()
-            File(context.cacheDir, EXTRACT_DIR_NAME).deleteRecursively()
+            stagingDirectory.deleteRecursively()
+            File(context.cacheDir, LEGACY_ARCHIVE_NAME).delete()
+            File(context.cacheDir, LEGACY_EXTRACT_DIR_NAME).deleteRecursively()
             _status.update {
                 NeuralVoiceStatus(
                     isInstalled = false,
-                    totalBytes = EXPECTED_ARCHIVE_BYTES
+                    totalBytes = TOTAL_DOWNLOAD_BYTES
                 )
             }
         }
@@ -246,77 +241,143 @@ class NeuralVoiceRepository @Inject constructor(
         _status.update { it.copy(error = null) }
     }
 
-    private fun extractArchive(archive: File, destination: File) {
-        destination.mkdirs()
-        val canonicalRoot = destination.canonicalFile
-        FileInputStream(archive).use { fileInput ->
-            BZip2CompressorInputStream(fileInput, true).use { bzip ->
-                TarArchiveInputStream(bzip).use { tar ->
-                    while (true) {
-                        val entry = tar.nextEntry ?: break
-                        if (entry.isDirectory) {
-                            File(canonicalRoot, entry.name).canonicalFile.let { dir ->
-                                require(dir.path.startsWith(canonicalRoot.path)) {
-                                    "Unsafe path in model archive"
+    private suspend fun downloadFile(
+        modelFile: ModelFile,
+        destination: File,
+        completedBytes: Long
+    ) {
+        destination.parentFile?.mkdirs()
+        val partFile = File(destination.parentFile, "${destination.name}.part")
+        partFile.delete()
+
+        try {
+            val request = Request.Builder()
+                .url(modelFile.url)
+                .header("User-Agent", "OgrChatAi-Android")
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    error("Download failed for ${modelFile.name}: HTTP ${response.code}")
+                }
+                val body = response.body
+                var downloaded = 0L
+                var lastReportedBytes = 0L
+                var lastReportedAtNanos = 0L
+                body.byteStream().use { input ->
+                    FileOutputStream(partFile).use { output ->
+                        val buffer = ByteArray(256 * 1024)
+                        while (true) {
+                            currentCoroutineContext().ensureActive()
+                            val read = input.read(buffer)
+                            if (read < 0) break
+                            output.write(buffer, 0, read)
+                            downloaded += read
+
+                            val now = System.nanoTime()
+                            val overall = completedBytes + downloaded
+                            if (overall - lastReportedBytes >= PROGRESS_UPDATE_BYTES ||
+                                now - lastReportedAtNanos >= PROGRESS_UPDATE_NANOS
+                            ) {
+                                lastReportedBytes = overall
+                                lastReportedAtNanos = now
+                                _status.update {
+                                    it.copy(
+                                        progress = (overall.toFloat() / TOTAL_DOWNLOAD_BYTES)
+                                            .coerceIn(0f, 0.99f),
+                                        downloadedBytes = overall
+                                    )
                                 }
-                                dir.mkdirs()
-                            }
-                            continue
-                        }
-                        if (!entry.isFile) continue
-                        val output = File(canonicalRoot, entry.name).canonicalFile
-                        require(output.path.startsWith(canonicalRoot.path)) {
-                            "Unsafe path in model archive"
-                        }
-                        output.parentFile?.mkdirs()
-                        FileOutputStream(output).use { out ->
-                            val buffer = ByteArray(64 * 1024)
-                            while (true) {
-                                val read = tar.read(buffer)
-                                if (read < 0) break
-                                out.write(buffer, 0, read)
                             }
                         }
                     }
                 }
-            }
-        }
-    }
 
-    private fun findModelDir(root: File): File? {
-        if (!root.exists()) return null
-        return root.walkTopDown()
-            .firstOrNull { dir -> dir.isDirectory && validateModelDir(dir) }
+                if (downloaded != modelFile.expectedBytes) {
+                    error(
+                        "Downloaded ${modelFile.name} is incomplete " +
+                            "($downloaded bytes, expected ${modelFile.expectedBytes})"
+                    )
+                }
+
+                if (destination.exists()) destination.delete()
+                if (!partFile.renameTo(destination)) {
+                    partFile.copyTo(destination, overwrite = true)
+                    partFile.delete()
+                }
+            }
+        } catch (e: Exception) {
+            partFile.delete()
+            throw e
+        }
     }
 
     private fun validateModelDir(dir: File): Boolean {
         if (!dir.isDirectory) return false
-        return REQUIRED_FILES.all { name ->
-            val file = File(dir, name)
-            file.isFile && file.length() > 0L
+        return MODEL_FILES.all { modelFile ->
+            val file = File(dir, modelFile.name)
+            file.isFile && file.length() == modelFile.expectedBytes
         }
     }
 
+    private data class ModelFile(
+        val name: String,
+        val expectedBytes: Long,
+        val url: String
+    )
+
     companion object {
-        const val MODEL_URL =
-            "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/" +
-                "sherpa-onnx-supertonic-3-tts-int8-2026-05-11.tar.bz2"
-
         private const val MODEL_DIR_NAME = "supertonic3"
-        private const val ARCHIVE_NAME = "supertonic3-model.tar.bz2"
-        private const val EXTRACT_DIR_NAME = "supertonic3-extract"
-        private const val EXPECTED_ARCHIVE_BYTES = 128_774_318L
-        private const val MIN_VALID_ARCHIVE_BYTES = 100_000_000L
-        private const val REQUIRED_FREE_BYTES = 300L * 1024L * 1024L
+        private const val STAGING_DIR_NAME = "supertonic3-download"
+        private const val LEGACY_ARCHIVE_NAME = "supertonic3-model.tar.bz2"
+        private const val LEGACY_EXTRACT_DIR_NAME = "supertonic3-extract"
+        private const val REQUIRED_FREE_BYTES = 200L * 1024L * 1024L
+        private const val PROGRESS_UPDATE_BYTES = 1024L * 1024L
+        private const val PROGRESS_UPDATE_NANOS = 100_000_000L
 
-        private val REQUIRED_FILES = listOf(
-            "tts.json",
-            "voice.bin",
-            "duration_predictor.int8.onnx",
-            "text_encoder.int8.onnx",
-            "vector_estimator.int8.onnx",
-            "vocoder.int8.onnx",
-            "unicode_indexer.bin"
+        private const val HF_BASE_URL =
+            "https://huggingface.co/csukuangfj2/" +
+                "sherpa-onnx-supertonic-3-tts-int8-2026-05-11/resolve/" +
+                "cca5a0e6c96e1d2c720986bf7e75fcc81dee3ae4/"
+
+        private val MODEL_FILES = listOf(
+            ModelFile(
+                name = "text_encoder.int8.onnx",
+                expectedBytes = 36_416_150L,
+                url = HF_BASE_URL + "text_encoder.int8.onnx"
+            ),
+            ModelFile(
+                name = "tts.json",
+                expectedBytes = 8_253L,
+                url = HF_BASE_URL + "tts.json"
+            ),
+            ModelFile(
+                name = "voice.bin",
+                expectedBytes = 517_168L,
+                url = HF_BASE_URL + "voice.bin"
+            ),
+            ModelFile(
+                name = "unicode_indexer.bin",
+                expectedBytes = 262_144L,
+                url = HF_BASE_URL + "unicode_indexer.bin"
+            ),
+            ModelFile(
+                name = "duration_predictor.int8.onnx",
+                expectedBytes = 3_700_147L,
+                url = HF_BASE_URL + "duration_predictor.int8.onnx"
+            ),
+            ModelFile(
+                name = "vector_estimator.int8.onnx",
+                expectedBytes = 78_400_833L,
+                url = HF_BASE_URL + "vector_estimator.int8.onnx"
+            ),
+            ModelFile(
+                name = "vocoder.int8.onnx",
+                expectedBytes = 25_991_073L,
+                url = HF_BASE_URL + "vocoder.int8.onnx"
+            )
         )
+
+        private val TOTAL_DOWNLOAD_BYTES = MODEL_FILES.sumOf { it.expectedBytes }
     }
 }

@@ -504,6 +504,10 @@ class ChatDetailViewModel @Inject constructor(
         val state = _uiState.value
         if (!state.isGenerating) return
 
+        // Cancel the native llama.cpp loop first. Cancelling only the UI
+        // collector can leave the model generating in the background, which
+        // blocks the next request and keeps CPU/memory busy.
+        inferenceEngine.cancelGeneration()
         generationJob?.cancel()
         generationJob = null
         flushBufferedStream()
@@ -730,8 +734,11 @@ class ChatDetailViewModel @Inject constructor(
     }
 
     override fun onCleared() {
-        super.onCleared()
+        if (_uiState.value.isGenerating) {
+            inferenceEngine.cancelGeneration()
+        }
         generationJob?.cancel()
+        super.onCleared()
         streamFlushJob?.cancel()
         voiceTimeoutJob?.cancel()
         streamBuffer.clear()

@@ -3,8 +3,10 @@ package com.ogrchatai.app.ui.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.ogrchatai.app.data.ml.InferenceEngine
+import com.ogrchatai.app.data.tts.NeuralVoiceRepository
 import com.ogrchatai.app.domain.model.AppSettings
 import com.ogrchatai.app.domain.model.DownloadedModel
+import com.ogrchatai.app.domain.model.TtsEngine
 import com.ogrchatai.app.domain.model.VoiceGender
 import com.ogrchatai.app.domain.repository.ModelRepository
 import com.ogrchatai.app.domain.usecase.settings.GetSettingsUseCase
@@ -39,7 +41,7 @@ data class VoiceCallUiState(
     val selectedModelId: String = "",
     val phase: VoiceCallPhase = VoiceCallPhase.MODEL_SELECTION,
     val isCallActive: Boolean = false,
-    val voiceGender: VoiceGender = VoiceGender.FEMALE,
+    val voiceLabel: String = "Android system voice",
     val status: String = "",
     val userTranscript: String = "",
     val partialTranscript: String = "",
@@ -56,7 +58,8 @@ class VoiceCallViewModel @Inject constructor(
     private val inferenceEngine: InferenceEngine,
     private val voiceInputManager: VoiceInputManager,
     private val textToSpeechManager: TextToSpeechManager,
-    private val getSettingsUseCase: GetSettingsUseCase
+    private val getSettingsUseCase: GetSettingsUseCase,
+    private val neuralVoiceRepository: NeuralVoiceRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(VoiceCallUiState())
@@ -73,6 +76,7 @@ class VoiceCallViewModel @Inject constructor(
     init {
         observeModels()
         observeSettings()
+        observeNeuralVoice()
     }
 
     private fun observeModels() {
@@ -99,10 +103,45 @@ class VoiceCallViewModel @Inject constructor(
         getSettingsUseCase()
             .onEach { settings ->
                 appSettings = settings
-                _uiState.update { it.copy(voiceGender = settings.voiceGender) }
+                _uiState.update {
+                    it.copy(
+                        voiceLabel = predictedVoiceLabel(
+                            settings,
+                            neuralVoiceRepository.status.value.isInstalled
+                        )
+                    )
+                }
             }
             .catch { }
             .launchIn(viewModelScope)
+    }
+
+    private fun observeNeuralVoice() {
+        neuralVoiceRepository.status
+            .onEach { status ->
+                _uiState.update {
+                    it.copy(
+                        voiceLabel = predictedVoiceLabel(appSettings, status.isInstalled)
+                    )
+                }
+            }
+            .launchIn(viewModelScope)
+    }
+
+    private fun predictedVoiceLabel(settings: AppSettings, neuralInstalled: Boolean): String {
+        return when {
+            settings.ttsEngine == TtsEngine.SYSTEM ->
+                "Android system · ${settings.voiceGender.label()}"
+            neuralInstalled ->
+                "Supertonic 3 · ${settings.ttsVoice.displayName}"
+            else ->
+                "Android system · ${settings.voiceGender.label()}"
+        }
+    }
+
+    private fun VoiceGender.label(): String = when (this) {
+        VoiceGender.FEMALE -> "Female"
+        VoiceGender.MALE -> "Male"
     }
 
     fun selectModel(modelId: String) {
@@ -142,7 +181,17 @@ class VoiceCallViewModel @Inject constructor(
                 return@launch
             }
 
-            _uiState.update { it.copy(status = "Loading ${model.name}...") }
+            val actualVoiceLabel = if (textToSpeechManager.isUsingNeural) {
+                "Supertonic 3 · ${appSettings.ttsVoice.displayName}"
+            } else {
+                "Android system · ${appSettings.voiceGender.label()}"
+            }
+            _uiState.update {
+                it.copy(
+                    voiceLabel = actualVoiceLabel,
+                    status = "Loading ${model.name}..."
+                )
+            }
 
             val modelPath = modelRepository.getModelPath(model.id)
             if (modelPath == null) {
@@ -181,8 +230,7 @@ class VoiceCallViewModel @Inject constructor(
 
         // Barge-in: if the assistant is speaking, stop playback and generation.
         if (state.phase == VoiceCallPhase.SPEAKING) {
-            generationJob?.cancel()
-            generationJob = null
+            cancelActiveGeneration()
             textToSpeechManager.stop()
         } else if (state.phase == VoiceCallPhase.THINKING) {
             return
@@ -259,8 +307,7 @@ class VoiceCallViewModel @Inject constructor(
     }
 
     fun endCall() {
-        generationJob?.cancel()
-        generationJob = null
+        cancelActiveGeneration()
         autoListenJob?.cancel()
         autoListenJob = null
         listenTimeoutJob?.cancel()
@@ -274,6 +321,10 @@ class VoiceCallViewModel @Inject constructor(
             it.copy(
                 phase = VoiceCallPhase.MODEL_SELECTION,
                 isCallActive = false,
+                voiceLabel = predictedVoiceLabel(
+                    appSettings,
+                    neuralVoiceRepository.status.value.isInstalled
+                ),
                 status = "",
                 userTranscript = "",
                 partialTranscript = "",
@@ -329,7 +380,7 @@ class VoiceCallViewModel @Inject constructor(
     }
 
     private fun generateAnswer(userText: String) {
-        generationJob?.cancel()
+        cancelActiveGeneration()
         textToSpeechManager.startStreaming()
         textToSpeechManager.onAllDone = { onAssistantSpeechFinished() }
 
@@ -346,6 +397,7 @@ class VoiceCallViewModel @Inject constructor(
                 )
 
                 val response = StringBuilder()
+                var lastTranscriptUpdateNanos = 0L
                 inferenceEngine.generateTextStream(
                     modelId = _uiState.value.selectedModelId,
                     prompt = userText,
@@ -365,8 +417,18 @@ class VoiceCallViewModel @Inject constructor(
                         }
                     }
                     response.append(token.text)
-                    _uiState.update { it.copy(assistantTranscript = response.toString()) }
                     textToSpeechManager.appendStreamingToken(token.text)
+
+                    // Updating the whole transcript for every model token forces
+                    // Compose to rebuild the call screen dozens of times per
+                    // second. Keep the spoken stream immediate but coalesce the
+                    // visual transcript.
+                    val now = System.nanoTime()
+                    if (now - lastTranscriptUpdateNanos >= TRANSCRIPT_UPDATE_NANOS) {
+                        lastTranscriptUpdateNanos = now
+                        val snapshot = response.toString()
+                        _uiState.update { it.copy(assistantTranscript = snapshot) }
+                    }
                 }
 
                 val answer = response.toString().trim()
@@ -429,9 +491,16 @@ class VoiceCallViewModel @Inject constructor(
         }
     }
 
-    private fun failCall(message: String) {
+    private fun cancelActiveGeneration() {
+        if (generationJob?.isActive == true) {
+            inferenceEngine.cancelGeneration()
+        }
         generationJob?.cancel()
         generationJob = null
+    }
+
+    private fun failCall(message: String) {
+        cancelActiveGeneration()
         autoListenJob?.cancel()
         autoListenJob = null
         voiceSessionActive = false
@@ -441,6 +510,10 @@ class VoiceCallViewModel @Inject constructor(
             it.copy(
                 phase = VoiceCallPhase.MODEL_SELECTION,
                 isCallActive = false,
+                voiceLabel = predictedVoiceLabel(
+                    appSettings,
+                    neuralVoiceRepository.status.value.isInstalled
+                ),
                 status = "",
                 error = message
             )
@@ -460,8 +533,8 @@ class VoiceCallViewModel @Inject constructor(
     }
 
     override fun onCleared() {
+        cancelActiveGeneration()
         super.onCleared()
-        generationJob?.cancel()
         autoListenJob?.cancel()
         listenTimeoutJob?.cancel()
         voiceSessionActive = false
@@ -475,6 +548,7 @@ class VoiceCallViewModel @Inject constructor(
 
     companion object {
         private const val MAX_TURNS = 20
+        private const val TRANSCRIPT_UPDATE_NANOS = 80_000_000L
         private const val CALL_SYSTEM_PROMPT =
             "You are a friendly voice assistant in a live phone call. " +
                 "Answer naturally and concisely in one to three short sentences, " +

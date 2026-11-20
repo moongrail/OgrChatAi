@@ -4,6 +4,7 @@ import com.ogrchatai.app.domain.model.DownloadedModel
 import com.ogrchatai.app.domain.model.GenerationConfig
 import com.ogrchatai.app.domain.model.HuggingFaceModel
 import com.ogrchatai.app.domain.model.ModelSettings
+import com.ogrchatai.app.domain.model.Sibling
 import kotlinx.coroutines.flow.Flow
 
 interface ModelRepository {
@@ -16,7 +17,7 @@ interface ModelRepository {
         onProgress: (Float) -> Unit
     ): Result<DownloadedModel>
     suspend fun deleteModel(id: String): Result<Unit>
-    suspend fun getAvailableFiles(modelId: String): List<String>
+    suspend fun getAvailableFiles(modelId: String): List<Sibling>
     fun getGenerationConfig(): Flow<GenerationConfig>
     suspend fun updateGenerationConfig(config: GenerationConfig)
     suspend fun getModelPath(id: String): String?

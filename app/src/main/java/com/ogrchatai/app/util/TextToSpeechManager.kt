@@ -74,33 +74,38 @@ class TextToSpeechManager @Inject constructor(
         desiredEngine = engine
         desiredVoice = voice
 
-        val systemResult = prepareSystem(locale)
         if (engine == TtsEngine.SYSTEM) {
             useNeural = false
             neuralEngine.release()
-            return@withContext systemResult
+            return@withContext prepareSystem(locale)
         }
 
+        // Do not initialize Android's system TTS when the neural model is
+        // available. Creating a second engine takes seconds on some devices and
+        // wastes memory that the local LLM needs.
+        var neuralFailure: Result<Unit>? = null
         val modelDir = neuralVoiceRepository.getModelDir()
-        if (modelDir == null) {
-            useNeural = false
-            neuralEngine.release()
-            return@withContext systemResult
+        if (modelDir != null) {
+            val neuralResult = neuralEngine.prepare(modelDir)
+            if (neuralResult.isSuccess) {
+                useNeural = true
+                return@withContext Result.success(Unit)
+            }
+            neuralFailure = neuralResult
+            Log.w(TAG, "Neural TTS unavailable, falling back to system voice", neuralResult.exceptionOrNull())
         }
 
-        val neuralResult = neuralEngine.prepare(modelDir)
-        useNeural = neuralResult.isSuccess
-        if (!useNeural) {
-            neuralEngine.release()
-            if (systemResult.isFailure) {
-                return@withContext Result.failure(
-                    neuralResult.exceptionOrNull()
-                        ?: systemResult.exceptionOrNull()
-                        ?: IllegalStateException("Text-to-speech is not available")
-                )
-            }
+        useNeural = false
+        neuralEngine.release()
+        val systemResult = prepareSystem(locale)
+        if (systemResult.isFailure && neuralFailure != null) {
+            return@withContext Result.failure(
+                neuralFailure.exceptionOrNull()
+                    ?: systemResult.exceptionOrNull()
+                    ?: IllegalStateException("Text-to-speech is not available")
+            )
         }
-        Result.success(Unit)
+        systemResult
     }
 
     private suspend fun prepareSystem(locale: Locale): Result<Unit> {
